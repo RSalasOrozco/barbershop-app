@@ -1,36 +1,169 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+💈 BarberTrack
+Sistema completo de gestión de citas para barberías y peluquerías
 
-## Getting Started
+https://img.shields.io/badge/Next.js-16.2-black
+https://img.shields.io/badge/TypeScript-5.x-blue
+https://img.shields.io/badge/Tailwind-3.x-38bdf8
+https://img.shields.io/badge/SQLite-3.x-003b57
+https://img.shields.io/badge/Licencia-MIT-yellow
 
-First, run the development server:
+🚀 Instalación Rápida
+bash
 
-```bash
+# 1. Clonar
+
+git clone https://github.com/tuusuario/barbershop-app.git
+cd barbershop-app
+
+# 2. Instalar
+
+npm install
+
+# 3. Ejecutar
+
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+# 4. Abrir http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+🔑 Acceso Inicial
+Rol Email Contraseña
+Admin admin@barber.com admin123
+Cliente Regístrate -
+✨ ¿Qué hace esta app?
+Para el Cliente:
+✅ Se registra con su nombre y email
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+✅ Agenda citas eligiendo servicio, fecha y hora
 
-## Learn More
+✅ Ve el historial de sus citas y su estado
 
-To learn more about Next.js, take a look at the following resources:
+Para el Dueño (Admin):
+✅ Ve TODAS las citas en una tabla
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+✅ Cambia el estado: Pendiente → Confirmada → Completada
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+✅ Elimina citas
 
-## Deploy on Vercel
+✅ Ve estadísticas:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Días con más clientes
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Servicios más populares
+
+Ingresos totales y por día
+
+✅ Gestiona usuarios (editar, resetear contraseña, eliminar)
+
+📸 Capturas de Pantalla
+Panel de Administrador
+text
+📊 Dashboard con pestañas:
+├── 📋 Gestión de Citas (tabla CRUD)
+└── 📈 Estadísticas (gráficos)
+Panel de Cliente
+text
+👤 Mi Panel:
+├── 📅 Agendar nueva cita
+└── 📋 Historial de mis citas
+🛠️ Tecnologías Principales
+Next.js 16 - Framework React
+
+TypeScript - Código más seguro
+
+Tailwind CSS - Diseño responsive
+
+SQLite - Base de datos en un archivo
+
+JWT - Autenticación segura
+
+📁 Estructura Importante
+text
+app/
+├── api/ # Backend (endpoints)
+├── (auth)/ # Login y Registro
+├── (dashboard)/  
+│ ├── admin/ # Panel del dueño
+│ └── cliente/ # Panel del cliente
+├── lib/db.ts # Base de datos
+└── middleware.ts # Protección de rutas
+🔒 Seguridad Implementada
+✅ Contraseñas hasheadas con bcrypt
+
+✅ Cookies HTTP-only (protege contra XSS)
+
+✅ Validación de email y nombre real
+
+✅ Protección de rutas por rol (admin/cliente)
+
+✅ SQL Injection prevenido (consultas parametrizadas)
+
+📦 Dependencias Clave
+json
+{
+"next": "16.2.2",
+"better-sqlite3": "9.x",
+"bcryptjs": "2.x",
+"jsonwebtoken": "9.x",
+"tailwindcss": "3.x",
+"react-datepicker": "6.x",
+"recharts": "2.x"
+}
+🚢 Deploy en Vercel (Gratis)
+bash
+
+# 1. Subir a GitHub
+
+git add .
+git commit -m "Versión 1.0"
+git push
+
+# 2. Conectar en vercel.com
+
+# 3. ¡Listo! Tu app online
+
+⚙️ Configuración Adicional
+Cambiar puerto:
+bash
+npm run dev -- -p 3001
+Ver base de datos:
+bash
+
+# Instalar DB Browser for SQLite y abrir barbershop.db
+
+Crear más admins:
+sql
+-- En barbershop.db
+UPDATE users SET role = 'admin' WHERE email = 'nuevo@admin.com';
+🐛 Solución de Problemas Comunes
+Error Solución
+Module not found: better-sqlite3 npm install better-sqlite3
+Error 404 en APIs Verificar nombres de archivo route.ts (singular)
+No carga citas Revisar consola F12, verificar token
+✅ Estado del Proyecto
+Autenticación completa
+
+CRUD de citas
+
+Panel de administrador
+
+Panel de cliente
+
+Estadísticas
+
+Gestión de usuarios
+
+Validaciones de seguridad
+
+Pagos en línea (próximamente)
+
+Notificaciones email (próximamente)
+
+📝 Licencia
+MIT - Usa este código como quieras, solo menciona la fuente.
+
+👨‍💻 Créditos
+Desarrollado con 💈 por [Tu Nombre]
+
+¿Preguntas? Abre un issue en GitHub.
+
+¿Te sirvió este proyecto? ⭐ Dale estrella en GitHub para apoyar.
