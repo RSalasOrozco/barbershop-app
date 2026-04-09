@@ -10,9 +10,8 @@ const validateEmail = (email: string): boolean => {
   return emailRegex.test(email);
 };
 
-// ✅ Función de validación de nombre (NUEVA)
+// ✅ Función de validación de nombre
 const validateName = (name: string): { valid: boolean; error: string } => {
-  // 1. Longitud mínima
   if (name.length < 2) {
     return {
       valid: false,
@@ -20,7 +19,6 @@ const validateName = (name: string): { valid: boolean; error: string } => {
     };
   }
 
-  // 2. Solo letras y espacios (incluye acentos y ñ)
   const nameRegex = /^[A-Za-zÁáÉéÍíÓóÚúÑñ\s]+$/;
   if (!nameRegex.test(name)) {
     return {
@@ -29,13 +27,11 @@ const validateName = (name: string): { valid: boolean; error: string } => {
     };
   }
 
-  // 3. No permitir solo espacios
   if (name.trim().length === 0) {
     return { valid: false, error: "El nombre no puede estar vacío" };
   }
 
-  // 4. Detectar caracteres repetidos excesivamente (anti-spam)
-  const repeatedChars = /(.)\1{4,}/; // 5 o más veces la misma letra
+  const repeatedChars = /(.)\1{4,}/;
   if (repeatedChars.test(name)) {
     return {
       valid: false,
@@ -43,7 +39,6 @@ const validateName = (name: string): { valid: boolean; error: string } => {
     };
   }
 
-  // 5. Detectar patrones de teclado comunes (asdf, qwer, etc.)
   const keyboardPatterns = [
     "asdf",
     "qwer",
@@ -60,7 +55,6 @@ const validateName = (name: string): { valid: boolean; error: string } => {
     }
   }
 
-  // 6. Advertencia: Solo tiene un nombre (sin apellido)
   if (!name.includes(" ")) {
     return {
       valid: true,
@@ -71,10 +65,41 @@ const validateName = (name: string): { valid: boolean; error: string } => {
   return { valid: true, error: "" };
 };
 
+// ✅ NUEVA: Función de validación de teléfono
+const validatePhone = (phone: string): { valid: boolean; error: string } => {
+  // Limpiar el número (quitar espacios, guiones, etc.)
+  const cleanPhone = phone.replace(/[\s\-\(\)]/g, "");
+
+  // Verificar que sean solo números
+  const phoneRegex = /^\d+$/;
+  if (!phoneRegex.test(cleanPhone)) {
+    return { valid: false, error: "Solo se permiten números" };
+  }
+
+  // Verificar que tenga 10 dígitos (Colombia)
+  if (cleanPhone.length !== 10) {
+    return {
+      valid: false,
+      error: "El número debe tener 10 dígitos (ej: 3001234567)"
+    };
+  }
+
+  // Verificar que empiece con 3 (celular Colombia)
+  if (!cleanPhone.startsWith("3")) {
+    return {
+      valid: false,
+      error: "Debe ser un número de celular que empiece con 3"
+    };
+  }
+
+  return { valid: true, error: "" };
+};
+
 export default function RegisterPage() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState(""); // ✅ NUEVO: estado para teléfono
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
@@ -86,7 +111,7 @@ export default function RegisterPage() {
     setError("");
     setWarning("");
 
-    // ✅ Validación de nombre (NUEVA)
+    // Validación de nombre
     const nameValidation = validateName(name);
     if (!nameValidation.valid) {
       setError(nameValidation.error);
@@ -94,9 +119,16 @@ export default function RegisterPage() {
       return;
     }
 
-    // Si es válido pero tiene advertencia (sin apellido)
     if (nameValidation.error) {
       setWarning(nameValidation.error);
+    }
+
+    // ✅ NUEVA: Validación de teléfono
+    const phoneValidation = validatePhone(phone);
+    if (!phoneValidation.valid) {
+      setError(phoneValidation.error);
+      setLoading(false);
+      return;
     }
 
     // Validación de email
@@ -119,7 +151,12 @@ export default function RegisterPage() {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), email, password })
+        body: JSON.stringify({
+          name: name.trim(),
+          email,
+          phone: phone.replace(/[\s\-\(\)]/g, ""), // ✅ Enviar teléfono limpio
+          password
+        })
       });
 
       const data = await res.json();
@@ -136,14 +173,20 @@ export default function RegisterPage() {
     }
   };
 
-  // ✅ Validación en tiempo real mientras escribe (NUEVA)
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setName(value);
-
-    // Limpiar error cuando empieza a escribir
     if (error) setError("");
     if (warning) setWarning("");
+  };
+
+  // ✅ NUEVA: Función para formatear teléfono mientras escribe
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/\D/g, ""); // Solo números
+    if (value.length <= 10) {
+      setPhone(value);
+    }
+    if (error) setError("");
   };
 
   return (
@@ -182,9 +225,6 @@ export default function RegisterPage() {
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               ✅ Solo letras y espacios. Mínimo 2 caracteres.
             </p>
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-              💡 Recomendado: Ingresa nombre y apellido real
-            </p>
           </div>
 
           <div>
@@ -200,8 +240,28 @@ export default function RegisterPage() {
               disabled={loading}
               placeholder="ejemplo@correo.com"
             />
+          </div>
+
+          {/* ✅ NUEVO: Campo de Teléfono */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Número de Celular *
+            </label>
+            <input
+              type="tel"
+              value={phone}
+              onChange={handlePhoneChange}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+              required
+              disabled={loading}
+              placeholder="3001234567"
+              maxLength={10}
+            />
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Debe contener @ y un dominio válido (.com, .es, etc.)
+              📱 Número de celular a 10 dígitos (ej: 3001234567)
+            </p>
+            <p className="text-xs text-green-600 dark:text-green-400 mt-0.5">
+              ✅ Recibirás confirmación de tus citas por WhatsApp
             </p>
           </div>
 
@@ -242,23 +302,6 @@ export default function RegisterPage() {
             Inicia Sesión
           </Link>
         </p>
-
-        <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-md">
-          <p className="text-xs text-gray-600 dark:text-gray-300">
-            <strong>📋 Ejemplos de nombres válidos:</strong>
-            <br />
-            ✅ Juan Pérez
-            <br />
-            ✅ María García López
-            <br />
-            ✅ José Ángel
-            <br />
-            ❌ asdfgh
-            <br />
-            ❌ 12345
-            <br />❌ aaaaaa
-          </p>
-        </div>
       </div>
     </div>
   );

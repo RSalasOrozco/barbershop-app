@@ -45,6 +45,38 @@ export default async function ClienteDashboard() {
   const user = await getUserData();
   const appointments = user ? await getUserAppointments(user.id) : [];
 
+  // Función para obtener color según el estado
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "pendiente":
+        return "bg-yellow-100 text-yellow-800";
+      case "confirmada":
+        return "bg-green-100 text-green-800";
+      case "cancelada":
+        return "bg-red-100 text-red-800";
+      case "completada":
+        return "bg-gray-100 text-gray-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  // Función para obtener texto del estado en español
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case "pendiente":
+        return "Pendiente";
+      case "confirmada":
+        return "Confirmada";
+      case "cancelada":
+        return "Cancelada";
+      case "completada":
+        return "Completada";
+      default:
+        return status;
+    }
+  };
+
   return (
     <div>
       <Navbar userName={user?.name} userRole={user?.role} />
@@ -88,7 +120,7 @@ export default async function ClienteDashboard() {
                   className="bg-white dark:bg-gray-800 rounded-lg shadow p-6"
                 >
                   <div className="flex justify-between items-start">
-                    <div>
+                    <div className="flex-1">
                       <h3 className="font-semibold text-lg text-gray-800 dark:text-white">
                         {apt.service_name}
                       </h3>
@@ -109,6 +141,22 @@ export default async function ClienteDashboard() {
                         )}{" "}
                         a las {apt.time}
                       </p>
+
+                      {/* ✅ NUEVO: Mostrar código de confirmación */}
+                      {apt.confirmation_code && (
+                        <div className="mt-3 p-2 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded inline-block">
+                          <p className="text-xs text-blue-600 dark:text-blue-400">
+                            📱 Código de confirmación:
+                          </p>
+                          <p className="text-lg font-bold text-blue-700 dark:text-blue-300 font-mono">
+                            {apt.confirmation_code}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Preséntalo cuando llegues a la barbería
+                          </p>
+                        </div>
+                      )}
+
                       {apt.notes && (
                         <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
                           📝 Nota: {apt.notes}
@@ -118,13 +166,10 @@ export default async function ClienteDashboard() {
                     <span
                       className={`
                       px-3 py-1 rounded-full text-xs font-medium
-                      ${apt.status === "pendiente" ? "bg-yellow-100 text-yellow-800" : ""}
-                      ${apt.status === "confirmada" ? "bg-green-100 text-green-800" : ""}
-                      ${apt.status === "cancelada" ? "bg-red-100 text-red-800" : ""}
-                      ${apt.status === "completada" ? "bg-gray-100 text-gray-800" : ""}
+                      ${getStatusColor(apt.status || "pendiente")}
                     `}
                     >
-                      {apt.status.charAt(0).toUpperCase() + apt.status.slice(1)}
+                      {getStatusText(apt.status || "pendiente")}
                     </span>
                   </div>
                 </div>

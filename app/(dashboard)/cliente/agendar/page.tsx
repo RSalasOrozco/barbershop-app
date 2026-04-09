@@ -24,9 +24,11 @@ export default function AgendarCitaPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [user, setUser] = useState<any>(null);
+  // ✅ CAMBIO #1: Agregar estado para el código de confirmación
+  const [confirmationCode, setConfirmationCode] = useState<string | null>(null);
 
-  // Horarios disponibles (simulados - luego lo haremos dinámico)
-  const timeSlots = [
+  // Horarios normales (Lunes a Sábado)
+  const horariosNormales = [
     "09:00",
     "09:30",
     "10:00",
@@ -42,10 +44,41 @@ export default function AgendarCitaPage() {
     "17:00"
   ];
 
+  // Horarios para Domingos (solo hasta 2pm)
+  const horariosDomingo = [
+    "09:00",
+    "09:30",
+    "10:00",
+    "10:30",
+    "11:00",
+    "11:30",
+    "14:00"
+  ];
+
+  // Función para obtener los horarios según la fecha seleccionada
+  const getTimeSlots = () => {
+    if (!selectedDate) return horariosNormales;
+    const dia = selectedDate.getDay(); // 0 = domingo
+    if (dia === 0) {
+      return horariosDomingo;
+    }
+    return horariosNormales;
+  };
+
   useEffect(() => {
     fetchServices();
     fetchUserData();
   }, []);
+
+  // Limpiar la hora seleccionada si cambia la fecha y la hora ya no está disponible
+  useEffect(() => {
+    if (selectedDate && selectedTime) {
+      const horariosDisponibles = getTimeSlots();
+      if (!horariosDisponibles.includes(selectedTime)) {
+        setSelectedTime("");
+      }
+    }
+  }, [selectedDate]);
 
   const fetchUserData = async () => {
     try {
@@ -80,6 +113,8 @@ export default function AgendarCitaPage() {
     setLoading(true);
     setError("");
     setSuccess("");
+    // ✅ Limpiar código anterior cuando se envía una nueva cita
+    setConfirmationCode(null);
 
     try {
       const formattedDate = selectedDate.toISOString().split("T")[0];
@@ -101,10 +136,13 @@ export default function AgendarCitaPage() {
         throw new Error(data.error || "Error al agendar");
       }
 
-      setSuccess("✅ ¡Cita agendada exitosamente!");
+      // ✅ CAMBIO #2: Guardar el código de confirmación y mostrar en el mensaje
+      setConfirmationCode(data.confirmationCode);
+      setSuccess(`✅ ¡Cita agendada exitosamente!`);
+
       setTimeout(() => {
         router.push("/cliente");
-      }, 2000);
+      }, 4000); // Aumentado a 4 segundos para que alcance a leer el código
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -112,11 +150,11 @@ export default function AgendarCitaPage() {
     }
   };
 
-  // Filtrar domingos y fechas pasadas
+  // Filtrar solo fechas pasadas (permite TODOS los días, incluyendo domingos)
   const filterDate = (date: Date) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    return date >= today && date.getDay() !== 0; // No domingos
+    return date >= today;
   };
 
   return (
@@ -131,9 +169,26 @@ export default function AgendarCitaPage() {
           Elige el servicio, fecha y hora que más te convenga
         </p>
 
+        {/* ✅ CAMBIO #3: Mostrar el código de confirmación en el mensaje de éxito */}
         {success && (
           <div className="mb-6 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
             {success}
+            {confirmationCode && (
+              <div className="mt-3 p-3 bg-blue-100 border border-blue-400 text-blue-700 rounded">
+                <strong>📱 CÓDIGO DE CONFIRMACIÓN:</strong>
+                <div className="text-2xl font-bold my-2">
+                  {confirmationCode}
+                </div>
+                <small>
+                  ✂️ Preséntalo cuando llegues a la barbería para confirmar tu
+                  cita.
+                </small>
+                <br />
+                <small className="text-xs">
+                  💡 También recibirás este código por WhatsApp (próximamente).
+                </small>
+              </div>
+            )}
           </div>
         )}
 
@@ -195,6 +250,13 @@ export default function AgendarCitaPage() {
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
               required
             />
+
+            {/* Mensaje informativo para domingos */}
+            {selectedDate && selectedDate.getDay() === 0 && (
+              <div className="mt-2 p-2 bg-orange-100 border border-orange-400 text-orange-700 rounded text-sm">
+                ⚠️ Los domingos solo atendemos hasta las 2:00 PM
+              </div>
+            )}
           </div>
 
           {/* Selección de Hora */}
@@ -203,7 +265,7 @@ export default function AgendarCitaPage() {
               Hora *
             </label>
             <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
-              {timeSlots.map((time) => (
+              {getTimeSlots().map((time) => (
                 <button
                   key={time}
                   type="button"

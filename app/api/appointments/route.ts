@@ -2,6 +2,29 @@ import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 import { jwtVerify } from "jose";
 
+// ✅ Función para generar código único de confirmación
+function generarCodigoConfirmacion(): string {
+  // Generar código como: BAR-1234 (4 números aleatorios)
+  const numero = Math.floor(1000 + Math.random() * 9000);
+  return `BAR-${numero}`;
+}
+
+// ✅ Función para verificar que el código no exista
+function generarCodigoUnico(): string {
+  let codigo: string;
+  let existe: boolean;
+
+  do {
+    codigo = generarCodigoConfirmacion();
+    const verificar = db
+      .prepare("SELECT id FROM appointments WHERE confirmation_code = ?")
+      .get(codigo);
+    existe = !!verificar;
+  } while (existe);
+
+  return codigo;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const token = request.cookies.get("token")?.value;
@@ -98,16 +121,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ✅ Generar código de confirmación único
+    const confirmationCode = generarCodigoUnico();
+
+    // ✅ Modificar INSERT para incluir el código de confirmación y status
     const stmt = db.prepare(`
-      INSERT INTO appointments (user_id, service_id, date, time, notes)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO appointments (user_id, service_id, date, time, notes, confirmation_code, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const result = stmt.run(payload.id, serviceId, date, time, notes || "");
+    const result = stmt.run(
+      payload.id,
+      serviceId,
+      date,
+      time,
+      notes || "",
+      confirmationCode,
+      "pendiente" // Status inicial: pendiente
+    );
 
     return NextResponse.json(
       {
         success: true,
+        confirmationCode, // ✅ Enviamos el código al frontend
         appointment: {
           id: result.lastInsertRowid,
           service: service,

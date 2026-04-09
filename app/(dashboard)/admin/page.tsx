@@ -14,6 +14,7 @@ interface Appointment {
   time: string;
   status: string;
   notes: string;
+  confirmation_code?: string;
 }
 
 interface Stats {
@@ -35,6 +36,10 @@ export default function AdminDashboard() {
   const [user, setUser] = useState<any>(null);
   const [filterStatus, setFilterStatus] = useState<string>("todas");
   const [error, setError] = useState<string>("");
+  // ✅ NUEVO: Estado para el tipo de ordenamiento
+  const [sortOrder, setSortOrder] = useState<
+    "fecha-reciente" | "fecha-lejana" | "hora-proxima"
+  >("fecha-reciente");
 
   useEffect(() => {
     fetchUserData();
@@ -95,11 +100,10 @@ export default function AdminDashboard() {
       });
 
       if (res.ok) {
-        // Actualizar la lista localmente sin recargar todo
         setAppointments((prev) =>
           prev.map((apt) => (apt.id === id ? { ...apt, status } : apt))
         );
-        fetchStats(); // Actualizar estadísticas
+        fetchStats();
       }
     } catch (error) {
       console.error("Error actualizando cita:", error);
@@ -115,12 +119,42 @@ export default function AdminDashboard() {
       });
 
       if (res.ok) {
-        // Eliminar localmente
         setAppointments((prev) => prev.filter((apt) => apt.id !== id));
-        fetchStats(); // Actualizar estadísticas
+        fetchStats();
       }
     } catch (error) {
       console.error("Error eliminando cita:", error);
+    }
+  };
+
+  // ✅ NUEVA: Función para ordenar las citas
+  const getSortedAppointments = (citas: Appointment[]) => {
+    const citasCopy = [...citas];
+
+    switch (sortOrder) {
+      case "fecha-reciente":
+        return citasCopy.sort((a, b) => {
+          const fechaA = new Date(`${a.date}T${a.time}`);
+          const fechaB = new Date(`${b.date}T${b.time}`);
+          return fechaB.getTime() - fechaA.getTime();
+        });
+
+      case "fecha-lejana":
+        return citasCopy.sort((a, b) => {
+          const fechaA = new Date(`${a.date}T${a.time}`);
+          const fechaB = new Date(`${b.date}T${b.time}`);
+          return fechaA.getTime() - fechaB.getTime();
+        });
+
+      case "hora-proxima":
+        return citasCopy.sort((a, b) => {
+          const fechaA = new Date(`${a.date}T${a.time}`);
+          const fechaB = new Date(`${b.date}T${b.time}`);
+          return fechaA.getTime() - fechaB.getTime();
+        });
+
+      default:
+        return citasCopy;
     }
   };
 
@@ -227,9 +261,10 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* Filtros y botón actualizar */}
-            <div className="mb-4 flex justify-between items-center">
-              <div className="flex space-x-2">
+            {/* Filtros y botones de ordenamiento */}
+            <div className="mb-4 flex flex-wrap gap-3 justify-between items-center">
+              <div className="flex flex-wrap gap-2">
+                {/* Filtro por estado */}
                 <select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value)}
@@ -241,7 +276,40 @@ export default function AdminDashboard() {
                   <option value="completada">Completadas</option>
                   <option value="cancelada">Canceladas</option>
                 </select>
+
+                {/* ✅ NUEVOS: Botones de ordenamiento */}
+                <button
+                  onClick={() => setSortOrder("hora-proxima")}
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    sortOrder === "hora-proxima"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                  }`}
+                >
+                  ⏰ Más Próximas
+                </button>
+                <button
+                  onClick={() => setSortOrder("fecha-reciente")}
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    sortOrder === "fecha-reciente"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                  }`}
+                >
+                  📅 Más Recientes
+                </button>
+                <button
+                  onClick={() => setSortOrder("fecha-lejana")}
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    sortOrder === "fecha-lejana"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                  }`}
+                >
+                  📆 Más Lejanas
+                </button>
               </div>
+
               <button
                 onClick={() => {
                   fetchAppointments();
@@ -273,6 +341,9 @@ export default function AdminDashboard() {
                         Servicio
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        Código
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                         Fecha/Hora
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
@@ -287,8 +358,8 @@ export default function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                    {filteredAppointments.length > 0 ? (
-                      filteredAppointments.map((apt) => (
+                    {getSortedAppointments(filteredAppointments).length > 0 ? (
+                      getSortedAppointments(filteredAppointments).map((apt) => (
                         <tr
                           key={apt.id}
                           className="hover:bg-gray-50 dark:hover:bg-gray-700/50"
@@ -303,6 +374,17 @@ export default function AdminDashboard() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
                             {apt.service_name}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            {apt.confirmation_code ? (
+                              <div className="text-sm font-mono font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded inline-block">
+                                {apt.confirmation_code}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-gray-400">
+                                Sin código
+                              </span>
+                            )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-sm text-gray-900 dark:text-white">
@@ -345,7 +427,7 @@ export default function AdminDashboard() {
                     ) : (
                       <tr>
                         <td
-                          colSpan={6}
+                          colSpan={7}
                           className="px-6 py-8 text-center text-gray-500 dark:text-gray-400"
                         >
                           {filterStatus === "todas"
@@ -363,7 +445,6 @@ export default function AdminDashboard() {
           <div>
             {/* Estadísticas */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Días con más citas */}
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                 <h3 className="text-lg font-semibold mb-4 text-gray-800 dark:text-white">
                   📅 Citas por Día de la Semana
@@ -405,7 +486,6 @@ export default function AdminDashboard() {
                 )}
               </div>
 
-              {/* Servicios más populares */}
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                 <h3 className="text-lg font-semibold mb-4 text-gray-800 dark:text-white">
                   🔥 Servicios Más Populares
@@ -441,7 +521,6 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* Ingresos por día */}
             <div className="mt-6 bg-white dark:bg-gray-800 rounded-lg shadow p-6">
               <h3 className="text-lg font-semibold mb-4 text-gray-800 dark:text-white">
                 💰 Ingresos Últimos 7 Días
