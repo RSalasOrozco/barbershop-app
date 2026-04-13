@@ -45,19 +45,19 @@ export default async function ClienteDashboard() {
   const user = await getUserData();
   const appointments = user ? await getUserAppointments(user.id) : [];
 
-  // Función para obtener color según el estado
+  // Función para obtener color según el estado (más notorio)
   const getStatusColor = (status: string) => {
     switch (status) {
       case "pendiente":
-        return "bg-yellow-100 text-yellow-800";
+        return "bg-yellow-500 text-white font-semibold shadow-sm px-3 py-1 rounded-full text-xs";
       case "confirmada":
-        return "bg-green-100 text-green-800";
+        return "bg-green-600 text-white font-semibold shadow-sm px-3 py-1 rounded-full text-xs";
       case "cancelada":
-        return "bg-red-100 text-red-800";
+        return "bg-red-600 text-white font-semibold shadow-sm px-3 py-1 rounded-full text-xs";
       case "completada":
-        return "bg-gray-100 text-gray-800";
+        return "bg-blue-600 text-white font-semibold shadow-sm px-3 py-1 rounded-full text-xs";
       default:
-        return "bg-gray-100 text-gray-800";
+        return "bg-gray-500 text-white font-semibold shadow-sm px-3 py-1 rounded-full text-xs";
     }
   };
 

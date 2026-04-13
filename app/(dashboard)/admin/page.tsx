@@ -165,12 +165,12 @@ export default function AdminDashboard() {
 
   const getStatusColor = (status: string) => {
     const colors: any = {
-      pendiente: "bg-yellow-100 text-yellow-800",
-      confirmada: "bg-green-100 text-green-800",
-      cancelada: "bg-red-100 text-red-800",
-      completada: "bg-gray-100 text-gray-800"
+      pendiente: "bg-yellow-500 text-white font-semibold shadow-sm",
+      confirmada: "bg-green-600 text-white font-semibold shadow-sm",
+      cancelada: "bg-red-600 text-white font-semibold shadow-sm",
+      completada: "bg-blue-600 text-white font-semibold shadow-sm"
     };
-    return colors[status] || "bg-gray-100 text-gray-800";
+    return colors[status] || "bg-gray-500 text-white font-semibold shadow-sm";
   };
 
   if (loading) {
@@ -405,12 +405,19 @@ export default function AdminDashboard() {
                               onChange={(e) =>
                                 updateAppointmentStatus(apt.id, e.target.value)
                               }
-                              className={`text-xs border rounded px-2 py-1 ${getStatusColor(apt.status)}`}
+                              className={`
+    text-xs font-medium px-3 py-1.5 rounded-lg border-2 cursor-pointer transition-all
+    focus:outline-none focus:ring-2 focus:ring-offset-2
+    ${apt.status === "pendiente" ? "bg-yellow-100 text-yellow-800 border-yellow-300 focus:ring-yellow-500" : ""}
+    ${apt.status === "confirmada" ? "bg-green-100 text-green-800 border-green-300 focus:ring-green-500" : ""}
+    ${apt.status === "completada" ? "bg-blue-100 text-blue-800 border-blue-300 focus:ring-blue-500" : ""}
+    ${apt.status === "cancelada" ? "bg-red-100 text-red-800 border-red-300 focus:ring-red-500" : ""}
+  `}
                             >
-                              <option value="pendiente">Pendiente</option>
-                              <option value="confirmada">Confirmar</option>
-                              <option value="completada">Completar</option>
-                              <option value="cancelada">Cancelar</option>
+                              <option value="pendiente">📋 Pendiente</option>
+                              <option value="confirmada">✅ Confirmar</option>
+                              <option value="completada">✨ Completar</option>
+                              <option value="cancelada">❌ Cancelar</option>
                             </select>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm">
