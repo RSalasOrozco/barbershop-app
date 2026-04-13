@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Navbar from "@/components/Navbar";
 import { useRouter } from "next/navigation";
+import toast from "react-hot-toast";
 
 interface Appointment {
   id: number;
@@ -36,10 +37,16 @@ export default function AdminDashboard() {
   const [user, setUser] = useState<any>(null);
   const [filterStatus, setFilterStatus] = useState<string>("todas");
   const [error, setError] = useState<string>("");
-  // ✅ NUEVO: Estado para el tipo de ordenamiento
   const [sortOrder, setSortOrder] = useState<
     "fecha-reciente" | "fecha-lejana" | "hora-proxima"
   >("fecha-reciente");
+
+  // Estados para el modal de confirmación
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{
+    id: number;
+    status: string;
+  } | null>(null);
 
   useEffect(() => {
     fetchUserData();
@@ -91,7 +98,31 @@ export default function AdminDashboard() {
     }
   };
 
-  const updateAppointmentStatus = async (id: number, status: string) => {
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case "pendiente":
+        return "Pendiente";
+      case "confirmada":
+        return "Confirmada";
+      case "completada":
+        return "Completada";
+      case "cancelada":
+        return "Cancelada";
+      default:
+        return status;
+    }
+  };
+
+  const updateAppointmentStatus = (id: number, status: string) => {
+    setPendingAction({ id, status });
+    setShowConfirmModal(true);
+  };
+
+  const confirmUpdateStatus = async () => {
+    if (!pendingAction) return;
+
+    const { id, status } = pendingAction;
+
     try {
       const res = await fetch("/api/admin/appointments", {
         method: "PUT",
@@ -104,9 +135,23 @@ export default function AdminDashboard() {
           prev.map((apt) => (apt.id === id ? { ...apt, status } : apt))
         );
         fetchStats();
+        toast.success(`✅ Cita ${getStatusText(status)} exitosamente`, {
+          icon: status === "cancelada" ? "❌" : "🎉",
+          style: { background: "#10b981", color: "#fff" }
+        });
+      } else {
+        toast.error("❌ Error al actualizar la cita", {
+          style: { background: "#ef4444", color: "#fff" }
+        });
       }
     } catch (error) {
       console.error("Error actualizando cita:", error);
+      toast.error("❌ Error al actualizar la cita", {
+        style: { background: "#ef4444", color: "#fff" }
+      });
+    } finally {
+      setShowConfirmModal(false);
+      setPendingAction(null);
     }
   };
 
@@ -121,13 +166,22 @@ export default function AdminDashboard() {
       if (res.ok) {
         setAppointments((prev) => prev.filter((apt) => apt.id !== id));
         fetchStats();
+        toast.success("🗑️ Cita eliminada exitosamente", {
+          style: { background: "#10b981", color: "#fff" }
+        });
+      } else {
+        toast.error("❌ Error al eliminar la cita", {
+          style: { background: "#ef4444", color: "#fff" }
+        });
       }
     } catch (error) {
       console.error("Error eliminando cita:", error);
+      toast.error("❌ Error al eliminar la cita", {
+        style: { background: "#ef4444", color: "#fff" }
+      });
     }
   };
 
-  // ✅ NUEVA: Función para ordenar las citas
   const getSortedAppointments = (citas: Appointment[]) => {
     const citasCopy = [...citas];
 
@@ -164,13 +218,87 @@ export default function AdminDashboard() {
       : appointments.filter((apt) => apt.status === filterStatus);
 
   const getStatusColor = (status: string) => {
-    const colors: any = {
-      pendiente: "bg-yellow-500 text-white font-semibold shadow-sm",
-      confirmada: "bg-green-600 text-white font-semibold shadow-sm",
-      cancelada: "bg-red-600 text-white font-semibold shadow-sm",
-      completada: "bg-blue-600 text-white font-semibold shadow-sm"
-    };
-    return colors[status] || "bg-gray-500 text-white font-semibold shadow-sm";
+    switch (status) {
+      case "pendiente":
+        return "bg-yellow-500 text-white font-semibold shadow-sm";
+      case "confirmada":
+        return "bg-green-600 text-white font-semibold shadow-sm";
+      case "cancelada":
+        return "bg-red-600 text-white font-semibold shadow-sm";
+      case "completada":
+        return "bg-blue-600 text-white font-semibold shadow-sm";
+      default:
+        return "bg-gray-500 text-white font-semibold shadow-sm";
+    }
+  };
+
+  // Modal de confirmación
+  const ConfirmModal = () => {
+    if (!showConfirmModal || !pendingAction) return null;
+
+    const statusText = getStatusText(pendingAction.status);
+
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center animate-in fade-in duration-200">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden animate-in zoom-in duration-200">
+          {/* Header */}
+          <div
+            className={`p-4 ${pendingAction.status === "cancelada" ? "bg-red-50 dark:bg-red-900/20" : "bg-blue-50 dark:bg-blue-900/20"}`}
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">
+                {pendingAction.status === "cancelada" ? "⚠️" : "✂️"}
+              </span>
+              <h3 className="text-lg font-bold text-gray-800 dark:text-white">
+                Confirmar acción
+              </h3>
+            </div>
+          </div>
+
+          {/* Body */}
+          <div className="p-6">
+            <p className="text-gray-700 dark:text-gray-300 mb-4">
+              ¿Estás seguro de que deseas marcar esta cita como{" "}
+              <span
+                className={`font-bold px-2 py-0.5 rounded ${getStatusColor(pendingAction.status)}`}
+              >
+                {statusText}
+              </span>
+              ?
+            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Esta acción no se puede deshacer.
+            </p>
+          </div>
+
+          {/* Footer */}
+          <div className="flex gap-3 p-4 border-t border-gray-200 dark:border-gray-700">
+            <button
+              onClick={() => {
+                setShowConfirmModal(false);
+                setPendingAction(null);
+              }}
+              className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={confirmUpdateStatus}
+              className={`
+                flex-1 px-4 py-2 rounded-lg text-white font-medium transition-colors
+                ${
+                  pendingAction.status === "cancelada"
+                    ? "bg-red-600 hover:bg-red-700"
+                    : "bg-blue-600 hover:bg-blue-700"
+                }
+              `}
+            >
+              Sí, {statusText}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   if (loading) {
@@ -264,7 +392,6 @@ export default function AdminDashboard() {
             {/* Filtros y botones de ordenamiento */}
             <div className="mb-4 flex flex-wrap gap-3 justify-between items-center">
               <div className="flex flex-wrap gap-2">
-                {/* Filtro por estado */}
                 <select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value)}
@@ -277,7 +404,6 @@ export default function AdminDashboard() {
                   <option value="cancelada">Canceladas</option>
                 </select>
 
-                {/* ✅ NUEVOS: Botones de ordenamiento */}
                 <button
                   onClick={() => setSortOrder("hora-proxima")}
                   className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
@@ -321,7 +447,6 @@ export default function AdminDashboard() {
               </button>
             </div>
 
-            {/* Mensaje de error si existe */}
             {error && (
               <div className="mb-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
                 ❌ {error}
@@ -406,13 +531,13 @@ export default function AdminDashboard() {
                                 updateAppointmentStatus(apt.id, e.target.value)
                               }
                               className={`
-    text-xs font-medium px-3 py-1.5 rounded-lg border-2 cursor-pointer transition-all
-    focus:outline-none focus:ring-2 focus:ring-offset-2
-    ${apt.status === "pendiente" ? "bg-yellow-100 text-yellow-800 border-yellow-300 focus:ring-yellow-500" : ""}
-    ${apt.status === "confirmada" ? "bg-green-100 text-green-800 border-green-300 focus:ring-green-500" : ""}
-    ${apt.status === "completada" ? "bg-blue-100 text-blue-800 border-blue-300 focus:ring-blue-500" : ""}
-    ${apt.status === "cancelada" ? "bg-red-100 text-red-800 border-red-300 focus:ring-red-500" : ""}
-  `}
+                                text-xs font-medium px-3 py-1.5 rounded-lg border-2 cursor-pointer transition-all
+                                focus:outline-none focus:ring-2 focus:ring-offset-2
+                                ${apt.status === "pendiente" ? "bg-yellow-100 text-yellow-800 border-yellow-300 focus:ring-yellow-500" : ""}
+                                ${apt.status === "confirmada" ? "bg-green-100 text-green-800 border-green-300 focus:ring-green-500" : ""}
+                                ${apt.status === "completada" ? "bg-blue-100 text-blue-800 border-blue-300 focus:ring-blue-500" : ""}
+                                ${apt.status === "cancelada" ? "bg-red-100 text-red-800 border-red-300 focus:ring-red-500" : ""}
+                              `}
                             >
                               <option value="pendiente">📋 Pendiente</option>
                               <option value="confirmada">✅ Confirmar</option>
@@ -557,6 +682,9 @@ export default function AdminDashboard() {
           </div>
         )}
       </div>
+
+      {/* Modal de confirmación */}
+      <ConfirmModal />
     </div>
   );
 }
