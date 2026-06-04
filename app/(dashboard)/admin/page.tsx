@@ -1,221 +1,686 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer
-} from "recharts";
+import { useState, useEffect } from "react";
+import Navbar from "@/components/Navbar";
+import { useRouter } from "next/navigation";
+import toast from "react-hot-toast";
 
-const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8"];
+interface Appointment {
+  id: number;
+  client_name: string;
+  client_email: string;
+  service_name: string;
+  service_price: number;
+  date: string;
+  time: string;
+  status: string;
+  notes: string;
+  confirmation_code?: string;
+}
 
-export default function StatsDashboard() {
-  const [stats, setStats] = useState<any>(null);
+interface Stats {
+  totalAppointments: number;
+  pendingAppointments: number;
+  completedAppointments: number;
+  totalRevenue: number;
+  appointmentsByDay: any[];
+  revenueByDay: any[];
+  popularServices: any[];
+}
+
+export default function AdminDashboard() {
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState<"citas" | "estadisticas">("citas");
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(null);
+  const [filterStatus, setFilterStatus] = useState<string>("todas");
+  const [error, setError] = useState<string>("");
+  const [sortOrder, setSortOrder] = useState<
+    "fecha-reciente" | "fecha-lejana" | "hora-proxima"
+  >("fecha-reciente");
+
+  // Estados para el modal de confirmación
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{
+    id: number;
+    status: string;
+  } | null>(null);
 
   useEffect(() => {
-    fetch("/api/stats")
-      .then((res) => res.json())
-      .then((data) => {
-        setStats(data);
-        setLoading(false);
-      })
-      .catch((error) => {
-        console.error("Error:", error);
-        setLoading(false);
-      });
+    fetchUserData();
+    fetchAppointments();
+    fetchStats();
   }, []);
+
+  const fetchUserData = async () => {
+    try {
+      const res = await fetch("/api/auth/me");
+      if (res.ok) {
+        const data = await res.json();
+        setUser(data.user);
+      }
+    } catch (error) {
+      console.error("Error fetching user:", error);
+    }
+  };
+
+  const fetchAppointments = async () => {
+    setError("");
+    try {
+      const res = await fetch("/api/appointments");
+
+      if (!res.ok) {
+        throw new Error(`Error ${res.status}: ${res.statusText}`);
+      }
+
+      const data = await res.json();
+      console.log("📋 Citas cargadas:", data.appointments?.length || 0);
+      setAppointments(data.appointments || []);
+    } catch (error: any) {
+      console.error("❌ Error cargando citas:", error);
+      setError(error.message || "Error al cargar las citas");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchStats = async () => {
+    try {
+      const res = await fetch("/api/admin/stats");
+      if (res.ok) {
+        const data = await res.json();
+        setStats(data);
+      }
+    } catch (error) {
+      console.error("Error cargando estadísticas:", error);
+    }
+  };
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case "pendiente":
+        return "Pendiente";
+      case "confirmada":
+        return "Confirmada";
+      case "completada":
+        return "Completada";
+      case "cancelada":
+        return "Cancelada";
+      default:
+        return status;
+    }
+  };
+
+  const updateAppointmentStatus = (id: number, status: string) => {
+    setPendingAction({ id, status });
+    setShowConfirmModal(true);
+  };
+
+  const confirmUpdateStatus = async () => {
+    if (!pendingAction) return;
+
+    const { id, status } = pendingAction;
+
+    try {
+      const res = await fetch("/api/admin/appointments", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status })
+      });
+
+      if (res.ok) {
+        setAppointments((prev) =>
+          prev.map((apt) => (apt.id === id ? { ...apt, status } : apt))
+        );
+        fetchStats();
+        toast.success(`✅ Cita ${getStatusText(status)} exitosamente`, {
+          icon: status === "cancelada" ? "❌" : "🎉",
+          style: { background: "#10b981", color: "#fff" }
+        });
+      } else {
+        toast.error("❌ Error al actualizar la cita", {
+          style: { background: "#ef4444", color: "#fff" }
+        });
+      }
+    } catch (error) {
+      console.error("Error actualizando cita:", error);
+      toast.error("❌ Error al actualizar la cita", {
+        style: { background: "#ef4444", color: "#fff" }
+      });
+    } finally {
+      setShowConfirmModal(false);
+      setPendingAction(null);
+    }
+  };
+
+  const deleteAppointment = async (id: number) => {
+    if (!confirm("¿Estás seguro de eliminar esta cita?")) return;
+
+    try {
+      const res = await fetch(`/api/admin/appointments?id=${id}`, {
+        method: "DELETE"
+      });
+
+      if (res.ok) {
+        setAppointments((prev) => prev.filter((apt) => apt.id !== id));
+        fetchStats();
+        toast.success("🗑️ Cita eliminada exitosamente", {
+          style: { background: "#10b981", color: "#fff" }
+        });
+      } else {
+        toast.error("❌ Error al eliminar la cita", {
+          style: { background: "#ef4444", color: "#fff" }
+        });
+      }
+    } catch (error) {
+      console.error("Error eliminando cita:", error);
+      toast.error("❌ Error al eliminar la cita", {
+        style: { background: "#ef4444", color: "#fff" }
+      });
+    }
+  };
+
+  const getSortedAppointments = (citas: Appointment[]) => {
+    const citasCopy = [...citas];
+
+    switch (sortOrder) {
+      case "fecha-reciente":
+        return citasCopy.sort((a, b) => {
+          const fechaA = new Date(`${a.date}T${a.time}`);
+          const fechaB = new Date(`${b.date}T${b.time}`);
+          return fechaB.getTime() - fechaA.getTime();
+        });
+
+      case "fecha-lejana":
+        return citasCopy.sort((a, b) => {
+          const fechaA = new Date(`${a.date}T${a.time}`);
+          const fechaB = new Date(`${b.date}T${b.time}`);
+          return fechaA.getTime() - fechaB.getTime();
+        });
+
+      case "hora-proxima":
+        return citasCopy.sort((a, b) => {
+          const fechaA = new Date(`${a.date}T${a.time}`);
+          const fechaB = new Date(`${b.date}T${b.time}`);
+          return fechaA.getTime() - fechaB.getTime();
+        });
+
+      default:
+        return citasCopy;
+    }
+  };
+
+  const filteredAppointments =
+    filterStatus === "todas"
+      ? appointments
+      : appointments.filter((apt) => apt.status === filterStatus);
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "pendiente":
+        return "bg-yellow-500 text-white font-semibold shadow-sm";
+      case "confirmada":
+        return "bg-green-600 text-white font-semibold shadow-sm";
+      case "cancelada":
+        return "bg-red-600 text-white font-semibold shadow-sm";
+      case "completada":
+        return "bg-blue-600 text-white font-semibold shadow-sm";
+      default:
+        return "bg-gray-500 text-white font-semibold shadow-sm";
+    }
+  };
+
+  // Modal de confirmación
+  const ConfirmModal = () => {
+    if (!showConfirmModal || !pendingAction) return null;
+
+    const statusText = getStatusText(pendingAction.status);
+
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center animate-in fade-in duration-200">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden animate-in zoom-in duration-200">
+          <div
+            className={`p-4 ${pendingAction.status === "cancelada" ? "bg-red-50 dark:bg-red-900/20" : "bg-blue-50 dark:bg-blue-900/20"}`}
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">
+                {pendingAction.status === "cancelada" ? "⚠️" : "✂️"}
+              </span>
+              <h3 className="text-lg font-bold text-gray-800 dark:text-white">
+                Confirmar acción
+              </h3>
+            </div>
+          </div>
+
+          <div className="p-6">
+            <p className="text-gray-700 dark:text-gray-300 mb-4">
+              ¿Estás seguro de que deseas marcar esta cita como{" "}
+              <span
+                className={`font-bold px-2 py-0.5 rounded ${getStatusColor(pendingAction.status)}`}
+              >
+                {statusText}
+              </span>
+              ?
+            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Esta acción no se puede deshacer.
+            </p>
+          </div>
+
+          <div className="flex gap-3 p-4 border-t border-gray-200 dark:border-gray-700">
+            <button
+              onClick={() => {
+                setShowConfirmModal(false);
+                setPendingAction(null);
+              }}
+              className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={confirmUpdateStatus}
+              className={`
+                flex-1 px-4 py-2 rounded-lg text-white font-medium transition-colors
+                ${
+                  pendingAction.status === "cancelada"
+                    ? "bg-red-600 hover:bg-red-700"
+                    : "bg-blue-600 hover:bg-blue-700"
+                }
+              `}
+            >
+              Sí, {statusText}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="text-gray-500 dark:text-gray-400 text-lg">
-          Cargando estadísticas...
+      <div>
+        <Navbar userName={user?.name} userRole={user?.role} />
+        <div className="flex items-center justify-center h-64">
+          <div className="text-gray-500">Cargando datos...</div>
         </div>
       </div>
     );
   }
 
-  const citasPorDia = stats?.citasPorDia || [];
-  const serviciosPopulares = stats?.serviciosPopulares || [];
-
-  // Personalizar tooltip para modo oscuro
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
-          <p className="text-gray-700 dark:text-gray-300 font-medium">
-            {label}
-          </p>
-          <p className="text-blue-600 dark:text-blue-400 font-bold">
-            Total: {payload[0].value}
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
-
   return (
-    <div className="space-y-6">
-      {/* Tarjetas de métricas */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 border border-gray-100 dark:border-gray-700">
-          <h3 className="text-gray-500 dark:text-gray-400 text-sm font-medium">
-            Total Citas
-          </h3>
-          <p className="text-3xl font-bold text-gray-800 dark:text-white mt-2">
-            {stats?.metricas?.totalCitas || 0}
-          </p>
+    <div>
+      <Navbar userName={user?.name} userRole={user?.role} />
+
+      <div className="p-8">
+        <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">
+          🔐 Panel de Administración
+        </h1>
+        <p className="text-gray-600 dark:text-gray-300 mb-8">
+          Gestiona todas las citas y visualiza el rendimiento del negocio
+        </p>
+
+        {/* Tabs */}
+        <div className="border-b border-gray-200 dark:border-gray-700 mb-6">
+          <nav className="flex space-x-4">
+            <button
+              onClick={() => setActiveTab("citas")}
+              className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${
+                activeTab === "citas"
+                  ? "border-blue-500 text-blue-600 dark:text-blue-400"
+                  : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400"
+              }`}
+            >
+              📋 Gestión de Citas
+            </button>
+            <button
+              onClick={() => setActiveTab("estadisticas")}
+              className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${
+                activeTab === "estadisticas"
+                  ? "border-blue-500 text-blue-600 dark:text-blue-400"
+                  : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400"
+              }`}
+            >
+              📊 Estadísticas
+            </button>
+          </nav>
         </div>
 
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 border border-gray-100 dark:border-gray-700">
-          <h3 className="text-gray-500 dark:text-gray-400 text-sm font-medium">
-            Citas Hoy
-          </h3>
-          <p className="text-3xl font-bold text-blue-600 dark:text-blue-400 mt-2">
-            {stats?.metricas?.citasHoy || 0}
-          </p>
-        </div>
+        {/* Contenido de Tabs */}
+        {activeTab === "citas" ? (
+          <div>
+            {/* Cards de resumen rápido */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
+                <h3 className="text-sm text-gray-500 dark:text-gray-400">
+                  Total Citas
+                </h3>
+                <p className="text-2xl font-bold text-gray-800 dark:text-white">
+                  {appointments.length}
+                </p>
+              </div>
+              <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg shadow">
+                <h3 className="text-sm text-yellow-700 dark:text-yellow-400">
+                  Pendientes
+                </h3>
+                <p className="text-2xl font-bold text-yellow-800 dark:text-yellow-300">
+                  {appointments.filter((a) => a.status === "pendiente").length}
+                </p>
+              </div>
+              <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg shadow">
+                <h3 className="text-sm text-green-700 dark:text-green-400">
+                  Completadas
+                </h3>
+                <p className="text-2xl font-bold text-green-800 dark:text-green-300">
+                  {appointments.filter((a) => a.status === "completada").length}
+                </p>
+              </div>
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg shadow">
+                <h3 className="text-sm text-blue-700 dark:text-blue-400">
+                  Ingresos Totales
+                </h3>
+                <p className="text-2xl font-bold text-blue-800 dark:text-blue-300">
+                  ${stats?.totalRevenue?.toLocaleString() || 0}
+                </p>
+              </div>
+            </div>
 
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 border border-gray-100 dark:border-gray-700">
-          <h3 className="text-gray-500 dark:text-gray-400 text-sm font-medium">
-            Ingresos Totales
-          </h3>
-          <p className="text-3xl font-bold text-green-600 dark:text-green-400 mt-2">
-            ${stats?.metricas?.ingresosTotales?.toLocaleString() || 0}
-          </p>
-        </div>
-
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 border border-gray-100 dark:border-gray-700">
-          <h3 className="text-gray-500 dark:text-gray-400 text-sm font-medium">
-            Clientes Activos
-          </h3>
-          <p className="text-3xl font-bold text-purple-600 dark:text-purple-400 mt-2">
-            {stats?.metricas?.clientesActivos || 0}
-          </p>
-        </div>
-      </div>
-
-      {/* Gráficos */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Gráfico de líneas */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 border border-gray-100 dark:border-gray-700">
-          <h3 className="text-lg font-semibold mb-4 text-gray-800 dark:text-white">
-            📈 Citas por Día (Últimos 7 días)
-          </h3>
-          <div style={{ width: "100%", height: 300 }}>
-            <ResponsiveContainer>
-              <LineChart data={citasPorDia}>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="#e5e7eb"
-                  strokeOpacity={0.5}
-                />
-                <XAxis
-                  dataKey="fecha"
-                  stroke="#9ca3af"
-                  tick={{ fill: "currentColor" }}
-                />
-                <YAxis stroke="#9ca3af" tick={{ fill: "currentColor" }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend
-                  wrapperStyle={{ color: "currentColor" }}
-                  formatter={(value) => (
-                    <span className="text-gray-700 dark:text-gray-300">
-                      {value}
-                    </span>
-                  )}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="total"
-                  stroke="#0088FE"
-                  strokeWidth={2}
-                  dot={{ fill: "#0088FE" }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Gráfico de pastel */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 border border-gray-100 dark:border-gray-700">
-          <h3 className="text-lg font-semibold mb-4 text-gray-800 dark:text-white">
-            🥧 Servicios Más Populares
-          </h3>
-          <div style={{ width: "100%", height: 300 }}>
-            <ResponsiveContainer>
-              <PieChart>
-                <Pie
-                  data={serviciosPopulares}
-                  dataKey="total"
-                  nameKey="servicio"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={100}
-                  label={({ name, percent }) =>
-                    `${name}: ${(percent * 100).toFixed(0)}%`
-                  }
-                  labelLine={true}
+            {/* Filtros */}
+            <div className="mb-4 flex flex-wrap gap-3 justify-between items-center">
+              <div className="flex flex-wrap gap-2">
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300"
                 >
-                  {serviciosPopulares.map((entry: any, index: number) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={COLORS[index % COLORS.length]}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip content={<CustomTooltip />} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+                  <option value="todas">Todas las citas</option>
+                  <option value="pendiente">Pendientes</option>
+                  <option value="confirmada">Confirmadas</option>
+                  <option value="completada">Completadas</option>
+                  <option value="cancelada">Canceladas</option>
+                </select>
 
-        {/* Gráfico de barras */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 border border-gray-100 dark:border-gray-700 lg:col-span-2">
-          <h3 className="text-lg font-semibold mb-4 text-gray-800 dark:text-white">
-            📊 Popularidad de Servicios
-          </h3>
-          <div style={{ width: "100%", height: 300 }}>
-            <ResponsiveContainer>
-              <BarChart data={serviciosPopulares}>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="#e5e7eb"
-                  strokeOpacity={0.5}
-                />
-                <XAxis
-                  dataKey="servicio"
-                  stroke="#9ca3af"
-                  tick={{ fill: "currentColor" }}
-                />
-                <YAxis stroke="#9ca3af" tick={{ fill: "currentColor" }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend
-                  wrapperStyle={{ color: "currentColor" }}
-                  formatter={(value) => (
-                    <span className="text-gray-700 dark:text-gray-300">
-                      {value}
-                    </span>
-                  )}
-                />
-                <Bar dataKey="total" fill="#00C49F" radius={[10, 10, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+                <button
+                  onClick={() => setSortOrder("hora-proxima")}
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    sortOrder === "hora-proxima"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                  }`}
+                >
+                  ⏰ Más Próximas
+                </button>
+                <button
+                  onClick={() => setSortOrder("fecha-reciente")}
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    sortOrder === "fecha-reciente"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                  }`}
+                >
+                  📅 Más Recientes
+                </button>
+                <button
+                  onClick={() => setSortOrder("fecha-lejana")}
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    sortOrder === "fecha-lejana"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                  }`}
+                >
+                  📆 Más Lejanas
+                </button>
+              </div>
+
+              <button
+                onClick={() => {
+                  fetchAppointments();
+                  fetchStats();
+                }}
+                className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
+              >
+                🔄 Actualizar
+              </button>
+            </div>
+
+            {error && (
+              <div className="mb-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+                ❌ {error}
+              </div>
+            )}
+
+            {/* Tabla de Citas */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 dark:bg-gray-700">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        Cliente
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        Servicio
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        Código
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        Fecha/Hora
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        Precio
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        Estado
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        Acciones
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {getSortedAppointments(filteredAppointments).length > 0 ? (
+                      getSortedAppointments(filteredAppointments).map((apt) => (
+                        <tr
+                          key={apt.id}
+                          className="hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                        >
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900 dark:text-white">
+                              {apt.client_name}
+                            </div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              {apt.client_email}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
+                            {apt.service_name}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            {apt.confirmation_code ? (
+                              <div className="text-sm font-mono font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded inline-block">
+                                {apt.confirmation_code}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-gray-400">
+                                Sin código
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900 dark:text-white">
+                              {new Date(
+                                apt.date + "T00:00:00"
+                              ).toLocaleDateString("es-ES")}
+                            </div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              {apt.time}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
+                            ${apt.service_price?.toLocaleString() || 0}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <select
+                              value={apt.status}
+                              onChange={(e) =>
+                                updateAppointmentStatus(apt.id, e.target.value)
+                              }
+                              className={`
+                                text-xs font-medium px-3 py-1.5 rounded-lg border-2 cursor-pointer transition-all
+                                focus:outline-none focus:ring-2 focus:ring-offset-2
+                                ${apt.status === "pendiente" ? "bg-yellow-100 text-yellow-800 border-yellow-300 focus:ring-yellow-500" : ""}
+                                ${apt.status === "confirmada" ? "bg-green-100 text-green-800 border-green-300 focus:ring-green-500" : ""}
+                                ${apt.status === "completada" ? "bg-blue-100 text-blue-800 border-blue-300 focus:ring-blue-500" : ""}
+                                ${apt.status === "cancelada" ? "bg-red-100 text-red-800 border-red-300 focus:ring-red-500" : ""}
+                              `}
+                            >
+                              <option value="pendiente">📋 Pendiente</option>
+                              <option value="confirmada">✅ Confirmar</option>
+                              <option value="completada">✨ Completar</option>
+                              <option value="cancelada">❌ Cancelar</option>
+                            </select>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm">
+                            <button
+                              onClick={() => deleteAppointment(apt.id)}
+                              className="text-red-600 hover:text-red-700 text-sm"
+                              title="Eliminar cita"
+                            >
+                              🗑️ Eliminar
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td
+                          colSpan={7}
+                          className="px-6 py-8 text-center text-gray-500 dark:text-gray-400"
+                        >
+                          {filterStatus === "todas"
+                            ? "No hay citas registradas. ¡Cuando los clientes agenden citas aparecerán aquí!"
+                            : `No hay citas con estado "${filterStatus}"`}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div>
+            {/* Estadísticas - Versión simple sin gráficos */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                <h3 className="text-lg font-semibold mb-4 text-gray-800 dark:text-white">
+                  📅 Citas por Día de la Semana
+                </h3>
+                {stats?.appointmentsByDay &&
+                stats.appointmentsByDay.length > 0 ? (
+                  <div className="space-y-3">
+                    {stats.appointmentsByDay.map((day: any) => {
+                      const maxCount = Math.max(
+                        ...stats.appointmentsByDay.map((d: any) => d.count),
+                        1
+                      );
+                      return (
+                        <div key={day.day_num} className="flex items-center">
+                          <span className="w-24 text-sm text-gray-600 dark:text-gray-400">
+                            {day.day_name}
+                          </span>
+                          <div className="flex-1 mx-3">
+                            <div className="h-6 bg-blue-200 dark:bg-blue-900 rounded">
+                              <div
+                                className="h-6 bg-blue-600 rounded"
+                                style={{
+                                  width: `${(day.count / maxCount) * 100}%`
+                                }}
+                              />
+                            </div>
+                          </div>
+                          <span className="text-sm font-medium text-gray-800 dark:text-white">
+                            {day.count}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-gray-500 text-center py-4">
+                    No hay datos suficientes
+                  </p>
+                )}
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                <h3 className="text-lg font-semibold mb-4 text-gray-800 dark:text-white">
+                  🔥 Servicios Más Populares
+                </h3>
+                {stats?.popularServices && stats.popularServices.length > 0 ? (
+                  <div className="space-y-3">
+                    {stats.popularServices.map(
+                      (service: any, index: number) => (
+                        <div
+                          key={index}
+                          className="flex items-center justify-between"
+                        >
+                          <div>
+                            <p className="text-sm font-medium text-gray-800 dark:text-white">
+                              {service.name}
+                            </p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              {service.count} citas
+                            </p>
+                          </div>
+                          <p className="text-sm font-semibold text-green-600 dark:text-green-400">
+                            ${service.revenue?.toLocaleString() || 0}
+                          </p>
+                        </div>
+                      )
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-gray-500 text-center py-4">
+                    No hay datos suficientes
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-6 bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+              <h3 className="text-lg font-semibold mb-4 text-gray-800 dark:text-white">
+                💰 Ingresos Últimos 7 Días
+              </h3>
+              {stats?.revenueByDay && stats.revenueByDay.length > 0 ? (
+                <div className="grid grid-cols-7 gap-2">
+                  {stats.revenueByDay.map((day: any) => (
+                    <div key={day.date} className="text-center">
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                        {new Date(day.date + "T00:00:00").toLocaleDateString(
+                          "es-ES",
+                          { weekday: "short" }
+                        )}
+                      </div>
+                      <div className="text-sm font-medium text-gray-800 dark:text-white">
+                        ${day.total?.toLocaleString() || 0}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-gray-500 text-center py-4">
+                  No hay ingresos registrados en los últimos 7 días
+                </p>
+              )}
+            </div>
+          </div>
+        )}
       </div>
+
+      <ConfirmModal />
     </div>
   );
 }
