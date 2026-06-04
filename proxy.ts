@@ -11,9 +11,10 @@ export default async function proxy(request: NextRequest) {
   if (publicPaths.includes(pathname)) {
     if (token) {
       try {
-        const secret = new TextEncoder().encode(
-          "barbershop-secret-key-2024-change-in-production"
-        );
+        const secretKey =
+          process.env.JWT_SECRET ||
+          "barbershop-secret-key-2024-change-in-production";
+        const secret = new TextEncoder().encode(secretKey);
         const { payload } = await jwtVerify(token, secret);
 
         if (payload.role === "admin") {
