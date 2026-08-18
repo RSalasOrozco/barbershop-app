@@ -1,21 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
-import { jwtVerify } from "jose";
+import { getSession } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 
 export async function POST(request: NextRequest) {
   try {
-    const token = request.cookies.get("token")?.value;
-    if (!token) {
+    const session = await getSession(request);
+    if (!session) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 
-    const secret = new TextEncoder().encode(
-      "barbershop-secret-key-2024-change-in-production"
-    );
-    const { payload } = await jwtVerify(token, secret);
-
-    if (payload.role !== "admin") {
+    if (session.role !== "admin") {
       return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
     }
 

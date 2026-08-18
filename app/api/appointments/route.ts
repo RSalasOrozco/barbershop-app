@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
-import { jwtVerify } from "jose";
+import { getSession } from "@/lib/auth";
 
 // ✅ Función para generar código único de confirmación
 function generarCodigoConfirmacion(): string {
@@ -27,15 +27,10 @@ function generarCodigoUnico(): string {
 
 export async function GET(request: NextRequest) {
   try {
-    const token = request.cookies.get("token")?.value;
-    if (!token) {
+    const user = await getSession(request);
+    if (!user) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
-
-    const secret = new TextEncoder().encode(
-      "barbershop-secret-key-2024-change-in-production"
-    );
-    const { payload } = await jwtVerify(token, secret);
 
     let query = `
       SELECT 
@@ -49,12 +44,12 @@ export async function GET(request: NextRequest) {
       JOIN users u ON a.user_id = u.id
     `;
 
-    let params: any[] = [];
+    const params: (string | number)[] = [];
 
     // Si es cliente, solo ve sus citas
-    if (payload.role === "cliente") {
+    if (user.role === "cliente") {
       query += ` WHERE a.user_id = ?`;
-      params.push(payload.id);
+      params.push(user.id);
     }
 
     query += ` ORDER BY a.date DESC, a.time DESC`;
@@ -76,15 +71,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const token = request.cookies.get("token")?.value;
-    if (!token) {
+    const user = await getSession(request);
+    if (!user) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
-
-    const secret = new TextEncoder().encode(
-      "barbershop-secret-key-2024-change-in-production"
-    );
-    const { payload } = await jwtVerify(token, secret);
 
     const { serviceId, date, time, notes } = await request.json();
 
@@ -131,7 +121,7 @@ export async function POST(request: NextRequest) {
     `);
 
     const result = stmt.run(
-      payload.id,
+      user.id,
       serviceId,
       date,
       time,

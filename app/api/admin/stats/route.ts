@@ -1,33 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
-import { jwtVerify } from "jose";
+import { getSession } from "@/lib/auth";
+
+interface CountRow {
+  count: number;
+}
+
+interface RevenueRow {
+  total: number | null;
+}
 
 export async function GET(request: NextRequest) {
   try {
-    const token = request.cookies.get("token")?.value;
-    if (!token) {
+    const user = await getSession(request);
+    if (!user) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 
-    const secret = new TextEncoder().encode(
-      "barbershop-secret-key-2024-change-in-production"
-    );
-    const { payload } = await jwtVerify(token, secret);
-
-    if (payload.role !== "admin") {
+    if (user.role !== "admin") {
       return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
     }
 
     // Estadísticas generales
     const totalAppointments = db
       .prepare("SELECT COUNT(*) as count FROM appointments")
-      .get() as any;
+      .get() as CountRow;
     const pendingAppointments = db
       .prepare("SELECT COUNT(*) as count FROM appointments WHERE status = ?")
-      .get("pendiente") as any;
+      .get("pendiente") as CountRow;
     const completedAppointments = db
       .prepare("SELECT COUNT(*) as count FROM appointments WHERE status = ?")
-      .get("completada") as any;
+      .get("completada") as CountRow;
 
     // Ingresos totales (citas completadas)
     const revenue = db
@@ -39,7 +42,7 @@ export async function GET(request: NextRequest) {
       WHERE a.status = 'completada'
     `
       )
-      .get() as any;
+      .get() as RevenueRow;
 
     // Citas por día de la semana
     const appointmentsByDay = db

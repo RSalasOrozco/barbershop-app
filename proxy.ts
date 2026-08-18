@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { jwtVerify } from "jose";
+import { verifyToken } from "@/lib/auth";
 
-// Cambiar a exportación por defecto
 export default async function proxy(request: NextRequest) {
   const token = request.cookies.get("token")?.value;
   const { pathname } = request.nextUrl;
@@ -10,20 +9,14 @@ export default async function proxy(request: NextRequest) {
   const publicPaths = ["/login", "/register", "/"];
   if (publicPaths.includes(pathname)) {
     if (token) {
-      try {
-        const secretKey =
-          process.env.JWT_SECRET ||
-          "barbershop-secret-key-2024-change-in-production";
-        const secret = new TextEncoder().encode(secretKey);
-        const { payload } = await jwtVerify(token, secret);
-
-        if (payload.role === "admin") {
-          return NextResponse.redirect(new URL("/admin", request.url));
-        } else {
-          return NextResponse.redirect(new URL("/cliente", request.url));
-        }
-      } catch (error) {
-        // Token inválido, continuar normalmente
+      const payload = await verifyToken(token);
+      if (payload) {
+        return NextResponse.redirect(
+          new URL(
+            payload.role === "admin" ? "/admin" : "/cliente",
+            request.url
+          )
+        );
       }
     }
     return NextResponse.next();
@@ -33,20 +26,16 @@ export default async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  try {
-    const secret = new TextEncoder().encode(
-      "barbershop-secret-key-2024-change-in-production"
-    );
-    const { payload } = await jwtVerify(token, secret);
-
-    if (pathname.startsWith("/admin") && payload.role !== "admin") {
-      return NextResponse.redirect(new URL("/cliente", request.url));
-    }
-
-    return NextResponse.next();
-  } catch (error) {
+  const payload = await verifyToken(token);
+  if (!payload) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
+
+  if (pathname.startsWith("/admin") && payload.role !== "admin") {
+    return NextResponse.redirect(new URL("/cliente", request.url));
+  }
+
+  return NextResponse.next();
 }
 
 export const config = {

@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Navbar from "@/components/Navbar";
-import { useRouter } from "next/navigation";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
 
 interface Appointment {
   id: number;
@@ -18,23 +17,46 @@ interface Appointment {
   confirmation_code?: string;
 }
 
+interface User {
+  id: number;
+  name: string;
+  email: string;
+  role: "admin" | "cliente";
+}
+
+interface DayStat {
+  day_name: string;
+  day_num: string;
+  count: number;
+}
+
+interface RevenueByDay {
+  date: string;
+  total: number;
+}
+
+interface PopularService {
+  name: string;
+  count: number;
+  revenue: number;
+}
+
 interface Stats {
   totalAppointments: number;
   pendingAppointments: number;
   completedAppointments: number;
   totalRevenue: number;
-  appointmentsByDay: any[];
-  revenueByDay: any[];
-  popularServices: any[];
+  appointmentsByDay: DayStat[];
+  revenueByDay: RevenueByDay[];
+  popularServices: PopularService[];
 }
 
 export default function AdminDashboard() {
-  const router = useRouter();
   const [activeTab, setActiveTab] = useState<"citas" | "estadisticas">("citas");
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>("todas");
   const [error, setError] = useState<string>("");
   const [sortOrder, setSortOrder] = useState<
@@ -48,7 +70,12 @@ export default function AdminDashboard() {
     status: string;
   } | null>(null);
 
+  // Guard para que StrictMode (dev) no duplique los fetch
+  const mounted = useRef(false);
+
   useEffect(() => {
+    if (mounted.current) return;
+    mounted.current = true;
     fetchUserData();
     fetchAppointments();
     fetchStats();
@@ -78,9 +105,11 @@ export default function AdminDashboard() {
       const data = await res.json();
       console.log("📋 Citas cargadas:", data.appointments?.length || 0);
       setAppointments(data.appointments || []);
-    } catch (error: any) {
+    } catch (error) {
       console.error("❌ Error cargando citas:", error);
-      setError(error.message || "Error al cargar las citas");
+      setError(
+        error instanceof Error ? error.message : "Error al cargar las citas"
+      );
     } finally {
       setLoading(false);
     }
@@ -135,20 +164,13 @@ export default function AdminDashboard() {
           prev.map((apt) => (apt.id === id ? { ...apt, status } : apt))
         );
         fetchStats();
-        toast.success(`✅ Cita ${getStatusText(status)} exitosamente`, {
-          icon: status === "cancelada" ? "❌" : "🎉",
-          style: { background: "#10b981", color: "#fff" }
-        });
+        toast.success(`✅ Cita ${getStatusText(status)} exitosamente`);
       } else {
-        toast.error("❌ Error al actualizar la cita", {
-          style: { background: "#ef4444", color: "#fff" }
-        });
+        toast.error("❌ Error al actualizar la cita");
       }
     } catch (error) {
       console.error("Error actualizando cita:", error);
-      toast.error("❌ Error al actualizar la cita", {
-        style: { background: "#ef4444", color: "#fff" }
-      });
+      toast.error("❌ Error al actualizar la cita");
     } finally {
       setShowConfirmModal(false);
       setPendingAction(null);
@@ -166,19 +188,13 @@ export default function AdminDashboard() {
       if (res.ok) {
         setAppointments((prev) => prev.filter((apt) => apt.id !== id));
         fetchStats();
-        toast.success("🗑️ Cita eliminada exitosamente", {
-          style: { background: "#10b981", color: "#fff" }
-        });
+        toast.success("🗑️ Cita eliminada exitosamente");
       } else {
-        toast.error("❌ Error al eliminar la cita", {
-          style: { background: "#ef4444", color: "#fff" }
-        });
+        toast.error("❌ Error al eliminar la cita");
       }
     } catch (error) {
       console.error("Error eliminando cita:", error);
-      toast.error("❌ Error al eliminar la cita", {
-        style: { background: "#ef4444", color: "#fff" }
-      });
+      toast.error("❌ Error al eliminar la cita");
     }
   };
 
@@ -581,9 +597,9 @@ export default function AdminDashboard() {
                 {stats?.appointmentsByDay &&
                 stats.appointmentsByDay.length > 0 ? (
                   <div className="space-y-3">
-                    {stats.appointmentsByDay.map((day: any) => {
+                    {stats.appointmentsByDay.map((day) => {
                       const maxCount = Math.max(
-                        ...stats.appointmentsByDay.map((d: any) => d.count),
+                        ...stats.appointmentsByDay.map((d) => d.count),
                         1
                       );
                       return (
@@ -621,8 +637,7 @@ export default function AdminDashboard() {
                 </h3>
                 {stats?.popularServices && stats.popularServices.length > 0 ? (
                   <div className="space-y-3">
-                    {stats.popularServices.map(
-                      (service: any, index: number) => (
+                    {stats.popularServices.map((service, index) => (
                         <div
                           key={index}
                           className="flex items-center justify-between"
@@ -656,7 +671,7 @@ export default function AdminDashboard() {
               </h3>
               {stats?.revenueByDay && stats.revenueByDay.length > 0 ? (
                 <div className="grid grid-cols-7 gap-2">
-                  {stats.revenueByDay.map((day: any) => (
+                  {stats.revenueByDay.map((day) => (
                     <div key={day.date} className="text-center">
                       <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
                         {new Date(day.date + "T00:00:00").toLocaleDateString(

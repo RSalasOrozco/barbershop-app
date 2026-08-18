@@ -1,20 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
-import { jwtVerify } from "jose";
+import { getSession } from "@/lib/auth";
 
 export async function PUT(request: NextRequest) {
   try {
-    const token = request.cookies.get("token")?.value;
-    if (!token) {
+    const user = await getSession(request);
+    if (!user) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 
-    const secret = new TextEncoder().encode(
-      "barbershop-secret-key-2024-change-in-production"
-    );
-    const { payload } = await jwtVerify(token, secret);
-
-    if (payload.role !== "admin") {
+    if (user.role !== "admin") {
       return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
     }
 
@@ -42,17 +37,12 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const token = request.cookies.get("token")?.value;
-    if (!token) {
+    const user = await getSession(request);
+    if (!user) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 
-    const secret = new TextEncoder().encode(
-      "barbershop-secret-key-2024-change-in-production"
-    );
-    const { payload } = await jwtVerify(token, secret);
-
-    if (payload.role !== "admin") {
+    if (user.role !== "admin") {
       return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
     }
 

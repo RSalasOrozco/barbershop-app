@@ -16,6 +16,7 @@ db.exec(`
     name TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
     password TEXT NOT NULL,
+    phone TEXT,
     role TEXT DEFAULT 'cliente' CHECK(role IN ('cliente', 'admin')),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -35,11 +36,30 @@ db.exec(`
     time TEXT NOT NULL,
     status TEXT DEFAULT 'pendiente' CHECK(status IN ('pendiente', 'confirmada', 'cancelada', 'completada')),
     notes TEXT,
+    confirmation_code TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (service_id) REFERENCES services(id)
   );
 `);
+
+// Migraciones para columnas agregadas en versiones posteriores
+// (CREATE TABLE IF NOT EXISTS no altera tablas existentes)
+const userColumns = db
+  .prepare("PRAGMA table_info(users)")
+  .all() as { name: string }[];
+if (!userColumns.some((col) => col.name === "phone")) {
+  db.exec("ALTER TABLE users ADD COLUMN phone TEXT");
+  console.log("✅ Columna phone agregada a users");
+}
+
+const appointmentColumns = db
+  .prepare("PRAGMA table_info(appointments)")
+  .all() as { name: string }[];
+if (!appointmentColumns.some((col) => col.name === "confirmation_code")) {
+  db.exec("ALTER TABLE appointments ADD COLUMN confirmation_code TEXT");
+  console.log("✅ Columna confirmation_code agregada a appointments");
+}
 
 // Datos Iniciales (Servicios)
 const serviceCount = db

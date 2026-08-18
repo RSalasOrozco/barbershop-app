@@ -19,7 +19,7 @@ cd barbershop-app
 
 npm install
 
-# 3. Ejecutar
+# 3. Ejecutar todo el proyecto
 
 npm run dev
 

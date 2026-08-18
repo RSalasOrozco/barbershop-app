@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
+import { signToken } from "@/lib/auth";
 
-// En producción, esto DEBE estar en .env (por ahora hardcodeado para simplificar)
-const JWT_SECRET = "barbershop-secret-key-2024-change-in-production";
+interface UserRow {
+  id: number;
+  name: string;
+  email: string;
+  password: string;
+  role: "admin" | "cliente";
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,7 +25,7 @@ export async function POST(request: NextRequest) {
     // Buscar usuario
     const user = db
       .prepare("SELECT * FROM users WHERE email = ?")
-      .get(email) as any;
+      .get(email) as UserRow | undefined;
 
     if (!user) {
       return NextResponse.json(
@@ -39,16 +44,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Crear token JWT
-    const token = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role
-      },
-      JWT_SECRET,
-      { expiresIn: "7d" }
-    );
+    const token = await signToken({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role
+    });
 
     // Crear respuesta con cookie HTTP-only (segura)
     const response = NextResponse.json({

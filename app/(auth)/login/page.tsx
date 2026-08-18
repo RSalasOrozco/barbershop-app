@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { toast } from "sonner";
 
 // ✅ Función de validación de email (AGREGADA)
 const validateEmail = (email: string): boolean => {
@@ -10,7 +11,7 @@ const validateEmail = (email: string): boolean => {
   return emailRegex.test(email);
 };
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const justRegistered = searchParams.get("registered");
@@ -48,6 +49,8 @@ export default function LoginPage() {
       }
 
       // Login exitoso
+      toast.success(`¡Hola, ${data.user.name}! 👋`);
+
       // Redirigir según el rol
       if (data.user.role === "admin") {
         router.push("/admin");
@@ -56,8 +59,8 @@ export default function LoginPage() {
       }
 
       router.refresh(); // Importante para actualizar el estado del cliente
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al iniciar sesión");
     } finally {
       setLoading(false);
     }
@@ -146,5 +149,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   );
 }

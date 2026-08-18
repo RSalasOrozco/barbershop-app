@@ -1,24 +1,28 @@
 import { cookies } from "next/headers";
-import { jwtVerify } from "jose";
+import { verifyToken, type JwtPayload } from "@/lib/auth";
 import Navbar from "@/components/Navbar";
 import Link from "next/link";
 import db from "@/lib/db";
 
-async function getUserData() {
+interface Appointment {
+  id: number;
+  service_name: string;
+  service_price: number;
+  service_duration: number;
+  date: string;
+  time: string;
+  status: string;
+  confirmation_code: string | null;
+  notes: string | null;
+}
+
+async function getUserData(): Promise<JwtPayload | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get("token")?.value;
 
   if (!token) return null;
 
-  try {
-    const secret = new TextEncoder().encode(
-      "barbershop-secret-key-2024-change-in-production"
-    );
-    const { payload } = await jwtVerify(token, secret);
-    return payload as any;
-  } catch {
-    return null;
-  }
+  return verifyToken(token);
 }
 
 async function getUserAppointments(userId: number) {
@@ -36,7 +40,7 @@ async function getUserAppointments(userId: number) {
     ORDER BY a.date DESC, a.time DESC
   `
     )
-    .all(userId);
+    .all(userId) as Appointment[];
 
   return appointments;
 }
@@ -114,7 +118,7 @@ export default async function ClienteDashboard() {
             </div>
           ) : (
             <div className="grid gap-4">
-              {appointments.map((apt: any) => (
+              {appointments.map((apt) => (
                 <div
                   key={apt.id}
                   className="bg-white dark:bg-gray-800 rounded-lg shadow p-6"

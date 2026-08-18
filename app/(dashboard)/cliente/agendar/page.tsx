@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
 
 interface Service {
   id: number;
@@ -13,6 +13,41 @@ interface Service {
   price: number;
   duration: number;
 }
+
+interface User {
+  id: number;
+  name: string;
+  email: string;
+  role: "admin" | "cliente";
+}
+
+// Horarios normales (Lunes a Sábado)
+const horariosNormales = [
+  "09:00",
+  "09:30",
+  "10:00",
+  "10:30",
+  "11:00",
+  "11:30",
+  "14:00",
+  "14:30",
+  "15:00",
+  "15:30",
+  "16:00",
+  "16:30",
+  "17:00"
+];
+
+// Horarios para Domingos (solo hasta 2pm)
+const horariosDomingo = [
+  "09:00",
+  "09:30",
+  "10:00",
+  "10:30",
+  "11:00",
+  "11:30",
+  "14:00"
+];
 
 export default function AgendarCitaPage() {
   const router = useRouter();
@@ -22,46 +57,18 @@ export default function AgendarCitaPage() {
   const [selectedTime, setSelectedTime] = useState<string>("");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [confirmationCode, setConfirmationCode] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState(0);
 
-  // Horarios normales (Lunes a Sábado)
-  const horariosNormales = [
-    "09:00",
-    "09:30",
-    "10:00",
-    "10:30",
-    "11:00",
-    "11:30",
-    "14:00",
-    "14:30",
-    "15:00",
-    "15:30",
-    "16:00",
-    "16:30",
-    "17:00"
-  ];
-
-  // Horarios para Domingos (solo hasta 2pm)
-  const horariosDomingo = [
-    "09:00",
-    "09:30",
-    "10:00",
-    "10:30",
-    "11:00",
-    "11:30",
-    "14:00"
-  ];
-
-  const getTimeSlots = () => {
+  const getTimeSlots = useCallback(() => {
     if (!selectedDate) return horariosNormales;
     const dia = selectedDate.getDay();
     if (dia === 0) return horariosDomingo;
     return horariosNormales;
-  };
+  }, [selectedDate]);
 
-  const getAvailableTimeSlots = () => {
+  const getAvailableTimeSlots = useCallback(() => {
     const todosLosHorarios = getTimeSlots();
     if (!selectedDate) return todosLosHorarios;
 
@@ -81,9 +88,14 @@ export default function AgendarCitaPage() {
       if (horaTime === horaActual && minutoTime > minutoActual) return true;
       return false;
     });
-  };
+  }, [getTimeSlots, selectedDate]);
+
+  // Guard para que StrictMode (dev) no duplique los fetch ni los toasts
+  const mounted = useRef(false);
 
   useEffect(() => {
+    if (mounted.current) return;
+    mounted.current = true;
     fetchServices();
     fetchUserData();
   }, []);
@@ -95,7 +107,7 @@ export default function AgendarCitaPage() {
         setSelectedTime("");
       }
     }
-  }, [selectedDate]);
+  }, [selectedDate, selectedTime, getAvailableTimeSlots]);
 
   // Contador regresivo para la redirección
   useEffect(() => {
@@ -127,17 +139,14 @@ export default function AgendarCitaPage() {
   };
 
   const fetchServices = async () => {
-    const loadingToast = toast.loading("🔄 Cargando servicios...", {
-      style: { background: "#3b82f6", color: "#fff" },
-      icon: "💈"
-    });
+    const loadingToast = toast.loading("🔄 Cargando servicios...");
 
     try {
       const res = await fetch("/api/services");
       const data = await res.json();
       setServices(data.services);
       toast.success("✅ Servicios cargados", { id: loadingToast });
-    } catch (error) {
+    } catch {
       toast.error("❌ Error al cargar servicios", { id: loadingToast });
     }
   };
@@ -146,10 +155,7 @@ export default function AgendarCitaPage() {
     e.preventDefault();
 
     if (!selectedService || !selectedDate || !selectedTime) {
-      toast.error("⚠️ Completa todos los campos", {
-        icon: "📋",
-        style: { background: "#ef4444", color: "#fff" }
-      });
+      toast.error("⚠️ Completa todos los campos");
       return;
     }
 
@@ -165,10 +171,7 @@ export default function AgendarCitaPage() {
         horaCitaNum < horaActual ||
         (horaCitaNum === horaActual && minutoCitaNum < minutoActual)
       ) {
-        toast.error(`⏰ No puedes agendar para las ${selectedTime} (ya pasó)`, {
-          icon: "⚠️",
-          style: { background: "#ef4444", color: "#fff" }
-        });
+        toast.error(`⏰ No puedes agendar para las ${selectedTime} (ya pasó)`);
         return;
       }
     }
@@ -176,13 +179,14 @@ export default function AgendarCitaPage() {
     setLoading(true);
     setConfirmationCode(null);
 
-    const loadingToast = toast.loading("✂️ Agendando tu cita...", {
-      style: { background: "#3b82f6", color: "#fff" },
-      icon: "⏳"
-    });
+    const loadingToast = toast.loading("✂️ Agendando tu cita...");
 
     try {
-      const formattedDate = selectedDate.toISOString().split("T")[0];
+      // Formatear la fecha en hora local para no sufrir cambios de día por UTC
+      const year = selectedDate.getFullYear();
+      const month = String(selectedDate.getMonth() + 1).padStart(2, "0");
+      const day = String(selectedDate.getDate()).padStart(2, "0");
+      const formattedDate = `${year}-${month}-${day}`;
 
       const res = await fetch("/api/appointments", {
         method: "POST",
@@ -204,20 +208,19 @@ export default function AgendarCitaPage() {
       setConfirmationCode(data.confirmationCode);
 
       toast.success("¡Cita agendada exitosamente!", {
-        id: loadingToast,
-        icon: "🎉",
-        style: { background: "#10b981", color: "#fff" }
+        id: loadingToast
       });
 
       setTimeout(() => {
         router.push("/cliente");
       }, 8000);
-    } catch (err: any) {
-      toast.error(err.message, {
-        id: loadingToast,
-        icon: "❌",
-        style: { background: "#ef4444", color: "#fff" }
-      });
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Error al agendar la cita",
+        {
+          id: loadingToast
+        }
+      );
       setLoading(false);
     }
   };
@@ -256,10 +259,7 @@ export default function AgendarCitaPage() {
               <button
                 onClick={() => {
                   navigator.clipboard.writeText(confirmationCode);
-                  toast.success("✅ Código copiado", {
-                    icon: "📋",
-                    style: { background: "#10b981", color: "#fff" }
-                  });
+                  toast.success("✅ Código copiado");
                 }}
                 className="mt-3 bg-white/20 hover:bg-white/30 text-white text-sm font-medium py-1.5 px-4 rounded-lg transition-all"
               >
@@ -316,7 +316,7 @@ export default function AgendarCitaPage() {
             </label>
             <DatePicker
               selected={selectedDate}
-              onChange={(date) => setSelectedDate(date)}
+              onChange={(date: Date | null) => setSelectedDate(date)}
               filterDate={filterDate}
               minDate={new Date()}
               dateFormat="dd/MM/yyyy"

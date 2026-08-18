@@ -14,10 +14,17 @@ interface User {
   total_spent: number;
 }
 
+interface SessionUser {
+  id: number;
+  name: string;
+  email: string;
+  role: "admin" | "cliente";
+}
+
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<SessionUser | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -87,8 +94,8 @@ export default function AdminUsersPage() {
       fetchUsers();
 
       setTimeout(() => setSuccess(""), 3000);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al actualizar");
     }
   };
 
@@ -116,8 +123,8 @@ export default function AdminUsersPage() {
       fetchUsers();
 
       setTimeout(() => setSuccess(""), 3000);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al eliminar");
     }
   };
 
@@ -153,8 +160,10 @@ export default function AdminUsersPage() {
       setSelectedUser(null);
 
       setTimeout(() => setSuccess(""), 3000);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Error al resetear contraseña"
+      );
     }
   };
 

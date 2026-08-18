@@ -1,22 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
-import { jwtVerify } from "jose";
-import bcrypt from "bcryptjs";
+import { getSession } from "@/lib/auth";
 
 // GET - Obtener todos los usuarios (solo admin)
 export async function GET(request: NextRequest) {
   try {
-    const token = request.cookies.get("token")?.value;
-    if (!token) {
+    const user = await getSession(request);
+    if (!user) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 
-    const secret = new TextEncoder().encode(
-      "barbershop-secret-key-2024-change-in-production"
-    );
-    const { payload } = await jwtVerify(token, secret);
-
-    if (payload.role !== "admin") {
+    if (user.role !== "admin") {
       return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
     }
 
@@ -53,17 +47,12 @@ export async function GET(request: NextRequest) {
 // PUT - Actualizar usuario (cambiar rol, nombre, etc.)
 export async function PUT(request: NextRequest) {
   try {
-    const token = request.cookies.get("token")?.value;
-    if (!token) {
+    const user = await getSession(request);
+    if (!user) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 
-    const secret = new TextEncoder().encode(
-      "barbershop-secret-key-2024-change-in-production"
-    );
-    const { payload } = await jwtVerify(token, secret);
-
-    if (payload.role !== "admin") {
+    if (user.role !== "admin") {
       return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
     }
 
@@ -77,7 +66,7 @@ export async function PUT(request: NextRequest) {
     }
 
     // No permitir que el admin se quite a sí mismo el rol admin
-    if (id === payload.id && role !== "admin") {
+    if (id === user.id && role !== "admin") {
       return NextResponse.json(
         {
           error: "No puedes quitarte el rol de administrador a ti mismo"
@@ -100,7 +89,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const updates: string[] = [];
-    const values: any[] = [];
+    const values: (string | number)[] = [];
 
     if (name) {
       updates.push("name = ?");
@@ -142,17 +131,12 @@ export async function PUT(request: NextRequest) {
 // DELETE - Eliminar usuario
 export async function DELETE(request: NextRequest) {
   try {
-    const token = request.cookies.get("token")?.value;
-    if (!token) {
+    const user = await getSession(request);
+    if (!user) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 
-    const secret = new TextEncoder().encode(
-      "barbershop-secret-key-2024-change-in-production"
-    );
-    const { payload } = await jwtVerify(token, secret);
-
-    if (payload.role !== "admin") {
+    if (user.role !== "admin") {
       return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
     }
 
@@ -167,7 +151,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     // No permitir que el admin se elimine a sí mismo
-    if (parseInt(id) === payload.id) {
+    if (parseInt(id) === user.id) {
       return NextResponse.json(
         {
           error: "No puedes eliminar tu propia cuenta de administrador"
@@ -177,8 +161,10 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Verificar que el usuario existe
-    const user = db.prepare("SELECT role FROM users WHERE id = ?").get(id);
-    if (!user) {
+    const userToDelete = db
+      .prepare("SELECT role FROM users WHERE id = ?")
+      .get(id);
+    if (!userToDelete) {
       return NextResponse.json(
         { error: "Usuario no encontrado" },
         { status: 404 }

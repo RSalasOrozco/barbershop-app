@@ -1,21 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { jwtVerify } from "jose";
+import { getSession } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
-  try {
-    const token = request.cookies.get("token")?.value;
+  const user = await getSession(request);
 
-    if (!token) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
-
-    const secret = new TextEncoder().encode(
-      "barbershop-secret-key-2024-change-in-production"
-    );
-    const { payload } = await jwtVerify(token, secret);
-
-    return NextResponse.json({ user: payload });
-  } catch (error) {
-    return NextResponse.json({ error: "Token inválido" }, { status: 401 });
+  if (!user) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
+
+  return NextResponse.json({ user });
 }
