@@ -24,7 +24,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es">
+    <html lang="es" className="dark">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
@@ -37,14 +37,14 @@ export default function RootLayout({
             duration: 4000,
             classNames: {
               toast:
-                "!rounded-xl !border !shadow-lg !font-medium",
-              error: "!bg-red-50 !border-red-300 !text-red-800",
-              success: "!bg-green-50 !border-green-300 !text-green-800",
-              warning: "!bg-yellow-50 !border-yellow-300 !text-yellow-800",
-              info: "!bg-blue-50 !border-blue-300 !text-blue-800",
-              loading: "!bg-white !border-gray-200 !text-gray-800",
+                "!rounded-xl !border !shadow-lg !font-medium !text-white",
+              error: "!bg-red-600 !border-red-700",
+              success: "!bg-green-600 !border-green-700",
+              warning: "!bg-yellow-600 !border-yellow-700",
+              info: "!bg-blue-600 !border-blue-700",
+              loading: "!bg-gray-800 !border-gray-600 !text-gray-100",
               closeButton:
-                "!bg-transparent !text-gray-400 hover:!text-gray-600"
+                "!bg-transparent !text-gray-300 hover:!text-white"
             }
           }}
         />

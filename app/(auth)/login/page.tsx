@@ -26,6 +26,19 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const showError = (message: string, notRegistered = false) => {
+    if (notRegistered) {
+      toast.error(`❌ ${message}`, {
+        action: {
+          label: "Registrarse",
+          onClick: () => router.push("/register")
+        }
+      });
+    } else {
+      toast.error(`❌ ${message}`);
+    }
+  };
+
   useEffect(() => {
     if (justRegistered) {
       toast.success(
@@ -43,15 +56,15 @@ function LoginForm() {
 
     if (isEmail) {
       if (!validateEmail(value)) {
-        toast.error(
-          "❌ Por favor ingresa un correo electrónico válido (ejemplo@dominio.com)"
+        showError(
+          "Por favor ingresa un correo electrónico válido (ejemplo@dominio.com)"
         );
         setLoading(false);
         return;
       }
     } else if (!validatePhone(value)) {
-      toast.error(
-        "❌ El teléfono debe tener 10 dígitos y empezar con 3 (celular Colombia)"
+      showError(
+        "El teléfono debe tener 10 dígitos y empezar con 3 (celular Colombia)"
       );
       setLoading(false);
       return;
@@ -67,7 +80,12 @@ function LoginForm() {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Error al iniciar sesión");
+        const notRegistered = data.code === "USER_NOT_FOUND";
+        showError(
+          data.error || "Error al iniciar sesión",
+          notRegistered
+        );
+        return;
       }
 
       // Login exitoso
@@ -82,8 +100,8 @@ function LoginForm() {
 
       router.refresh(); // Importante para actualizar el estado del cliente
     } catch (err) {
-      toast.error(
-        `❌ ${err instanceof Error ? err.message : "Error al iniciar sesión"}`
+      showError(
+        err instanceof Error ? err.message : "Error al iniciar sesión"
       );
     } finally {
       setLoading(false);

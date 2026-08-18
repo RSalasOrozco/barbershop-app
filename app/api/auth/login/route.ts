@@ -34,7 +34,10 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json(
-        { error: "Credenciales inválidas" },
+        {
+          error: "No estás registrado. Crea una cuenta primero",
+          code: "USER_NOT_FOUND"
+        },
         { status: 401 }
       );
     }
@@ -43,7 +46,7 @@ export async function POST(request: NextRequest) {
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
       return NextResponse.json(
-        { error: "Credenciales inválidas" },
+        { error: "Contraseña incorrecta", code: "INVALID_PASSWORD" },
         { status: 401 }
       );
     }
