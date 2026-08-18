@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { toast } from "sonner";
 
 // Función de validación de email
 const validateEmail = (email: string): boolean => {
@@ -101,40 +102,32 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState(""); // ✅ NUEVO: estado para teléfono
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [warning, setWarning] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError("");
-    setWarning("");
 
     // Validación de nombre
     const nameValidation = validateName(name);
     if (!nameValidation.valid) {
-      setError(nameValidation.error);
+      toast.warning(`⚠️ ${nameValidation.error}`);
       setLoading(false);
       return;
-    }
-
-    if (nameValidation.error) {
-      setWarning(nameValidation.error);
     }
 
     // ✅ NUEVA: Validación de teléfono
     const phoneValidation = validatePhone(phone);
     if (!phoneValidation.valid) {
-      setError(phoneValidation.error);
+      toast.error(`❌ ${phoneValidation.error}`);
       setLoading(false);
       return;
     }
 
     // Validación de email
     if (!validateEmail(email)) {
-      setError(
-        "Por favor ingresa un correo electrónico válido (ejemplo@dominio.com)"
+      toast.error(
+        "❌ Por favor ingresa un correo electrónico válido (ejemplo@dominio.com)"
       );
       setLoading(false);
       return;
@@ -142,7 +135,7 @@ export default function RegisterPage() {
 
     // Validación de contraseña
     if (password.length < 6) {
-      setError("La contraseña debe tener al menos 6 caracteres");
+      toast.error("❌ La contraseña debe tener al menos 6 caracteres");
       setLoading(false);
       return;
     }
@@ -167,7 +160,9 @@ export default function RegisterPage() {
 
       router.push("/login?registered=true");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al registrar");
+      toast.error(
+        `❌ ${err instanceof Error ? err.message : "Error al registrar"}`
+      );
     } finally {
       setLoading(false);
     }
@@ -176,8 +171,6 @@ export default function RegisterPage() {
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setName(value);
-    if (error) setError("");
-    if (warning) setWarning("");
   };
 
   // ✅ NUEVA: Función para formatear teléfono mientras escribe
@@ -186,7 +179,6 @@ export default function RegisterPage() {
     if (value.length <= 10) {
       setPhone(value);
     }
-    if (error) setError("");
   };
 
   return (
@@ -195,18 +187,6 @@ export default function RegisterPage() {
         <h1 className="text-2xl font-bold mb-6 text-center text-gray-900 dark:text-white">
           Crear Cuenta
         </h1>
-
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-            ❌ {error}
-          </div>
-        )}
-
-        {warning && (
-          <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded mb-4">
-            {warning}
-          </div>
-        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

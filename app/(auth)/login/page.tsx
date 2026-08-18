@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -11,25 +11,47 @@ const validateEmail = (email: string): boolean => {
   return emailRegex.test(email);
 };
 
+// ✅ Función de validación de teléfono
+const validatePhone = (phone: string): boolean => {
+  const clean = phone.replace(/[\s\-\(\)]/g, "");
+  return /^\d+$/.test(clean) && clean.length === 10 && clean.startsWith("3");
+};
+
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const justRegistered = searchParams.get("registered");
 
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (justRegistered) {
+      toast.success(
+        "✅ Cuenta creada exitosamente. Ahora puedes iniciar sesión."
+      );
+    }
+  }, [justRegistered]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError("");
 
-    // ✅ Validación de email (AGREGADA)
-    if (!validateEmail(email)) {
-      setError(
-        "Por favor ingresa un correo electrónico válido (ejemplo@dominio.com)"
+    const value = identifier.trim();
+    const isEmail = value.includes("@");
+
+    if (isEmail) {
+      if (!validateEmail(value)) {
+        toast.error(
+          "❌ Por favor ingresa un correo electrónico válido (ejemplo@dominio.com)"
+        );
+        setLoading(false);
+        return;
+      }
+    } else if (!validatePhone(value)) {
+      toast.error(
+        "❌ El teléfono debe tener 10 dígitos y empezar con 3 (celular Colombia)"
       );
       setLoading(false);
       return;
@@ -39,7 +61,7 @@ function LoginForm() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ identifier: value, password })
       });
 
       const data = await res.json();
@@ -49,7 +71,7 @@ function LoginForm() {
       }
 
       // Login exitoso
-      toast.success(`¡Hola, ${data.user.name}! 👋`);
+      toast.success(`✅ ¡Hola, ${data.user.name}! 👋`);
 
       // Redirigir según el rol
       if (data.user.role === "admin") {
@@ -60,7 +82,9 @@ function LoginForm() {
 
       router.refresh(); // Importante para actualizar el estado del cliente
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al iniciar sesión");
+      toast.error(
+        `❌ ${err instanceof Error ? err.message : "Error al iniciar sesión"}`
+      );
     } finally {
       setLoading(false);
     }
@@ -73,35 +97,23 @@ function LoginForm() {
           Iniciar Sesión
         </h1>
 
-        {justRegistered && (
-          <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
-            ✅ Cuenta creada exitosamente. Ahora puedes iniciar sesión.
-          </div>
-        )}
-
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-            {error}
-          </div>
-        )}
-
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Correo Electrónico
+              Correo o Teléfono
             </label>
             <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              type="text"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
               required
               disabled={loading}
-              placeholder="ejemplo@correo.com"
+              placeholder="ejemplo@correo.com o 3001234567"
             />
             {/* ✅ Mensaje de ayuda (AGREGADO) */}
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Debe ser un correo válido (contener @ y dominio)
+              Usa tu correo electrónico o tu número de celular (10 dígitos)
             </p>
           </div>
 

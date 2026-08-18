@@ -3,11 +3,13 @@
 import { useState, useEffect } from "react";
 import Navbar from "@/components/Navbar";
 import Link from "next/link";
+import { toast } from "sonner";
 
 interface User {
   id: number;
   name: string;
   email: string;
+  phone: string | null;
   role: string;
   created_at: string;
   total_appointments: number;
@@ -29,9 +31,8 @@ export default function AdminUsersPage() {
   const [showModal, setShowModal] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [deleteUser, setDeleteUser] = useState<User | null>(null);
   const [newPassword, setNewPassword] = useState("");
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
 
   useEffect(() => {
     fetchUserData();
@@ -65,7 +66,6 @@ export default function AdminUsersPage() {
   const handleEditUser = (user: User) => {
     setEditingUser({ ...user });
     setShowModal(true);
-    setError("");
   };
 
   const handleUpdateUser = async () => {
@@ -79,6 +79,7 @@ export default function AdminUsersPage() {
           id: editingUser.id,
           name: editingUser.name,
           email: editingUser.email,
+          phone: editingUser.phone,
           role: editingUser.role
         })
       });
@@ -89,25 +90,17 @@ export default function AdminUsersPage() {
         throw new Error(data.error || "Error al actualizar");
       }
 
-      setSuccess("Usuario actualizado correctamente");
       setShowModal(false);
       fetchUsers();
-
-      setTimeout(() => setSuccess(""), 3000);
+      toast.success("✅ Usuario actualizado correctamente");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al actualizar");
+      toast.error(
+        `❌ ${err instanceof Error ? err.message : "Error al actualizar"}`
+      );
     }
   };
 
   const handleDeleteUser = async (userId: number, userName: string) => {
-    if (
-      !confirm(
-        `¿Estás seguro de eliminar al usuario "${userName}"?\n\n⚠️ Esta acción también eliminará todas sus citas y NO se puede deshacer.`
-      )
-    ) {
-      return;
-    }
-
     try {
       const res = await fetch(`/api/admin/users?id=${userId}`, {
         method: "DELETE"
@@ -119,12 +112,10 @@ export default function AdminUsersPage() {
         throw new Error(data.error || "Error al eliminar");
       }
 
-      setSuccess(`Usuario "${userName}" eliminado correctamente`);
       fetchUsers();
-
-      setTimeout(() => setSuccess(""), 3000);
+      toast.success(`✅ Usuario "${userName}" eliminado correctamente`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al eliminar");
+      toast.error(`❌ ${err instanceof Error ? err.message : "Error al eliminar"}`);
     }
   };
 
@@ -132,7 +123,7 @@ export default function AdminUsersPage() {
     if (!selectedUser || !newPassword) return;
 
     if (newPassword.length < 6) {
-      setError("La contraseña debe tener al menos 6 caracteres");
+      toast.warning("⚠️ La contraseña debe tener al menos 6 caracteres");
       return;
     }
 
@@ -152,17 +143,17 @@ export default function AdminUsersPage() {
         throw new Error(data.error || "Error al resetear contraseña");
       }
 
-      setSuccess(
-        `Contraseña de "${selectedUser.name}" actualizada correctamente`
+      toast.success(
+        `✅ Contraseña de "${selectedUser.name}" actualizada correctamente`
       );
       setShowPasswordModal(false);
       setNewPassword("");
       setSelectedUser(null);
-
-      setTimeout(() => setSuccess(""), 3000);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Error al resetear contraseña"
+      toast.error(
+        `❌ ${
+          err instanceof Error ? err.message : "Error al resetear contraseña"
+        }`
       );
     }
   };
@@ -175,7 +166,7 @@ export default function AdminUsersPage() {
     });
   };
 
-  if (loading) {
+if (loading) {
     return (
       <div>
         <Navbar userName={user?.name} userRole={user?.role} />
@@ -207,18 +198,6 @@ export default function AdminUsersPage() {
             ← Volver al Dashboard
           </Link>
         </div>
-
-        {success && (
-          <div className="mb-4 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
-            ✅ {success}
-          </div>
-        )}
-
-        {error && (
-          <div className="mb-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-            ❌ {error}
-          </div>
-        )}
 
         {/* Estadísticas rápidas */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -289,6 +268,11 @@ export default function AdminUsersPage() {
                           <div className="text-sm text-gray-500 dark:text-gray-400">
                             {u.email}
                           </div>
+                          {u.phone && (
+                            <div className="text-sm text-gray-500 dark:text-gray-400">
+                              📱 {u.phone}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -325,7 +309,6 @@ export default function AdminUsersPage() {
                           onClick={() => {
                             setSelectedUser(u);
                             setShowPasswordModal(true);
-                            setError("");
                           }}
                           className="text-yellow-600 hover:text-yellow-800 dark:text-yellow-400"
                           title="Resetear contraseña"
@@ -334,7 +317,7 @@ export default function AdminUsersPage() {
                         </button>
                         {u.role !== "admin" && (
                           <button
-                            onClick={() => handleDeleteUser(u.id, u.name)}
+                            onClick={() => setDeleteUser(u)}
                             className="text-red-600 hover:text-red-800 dark:text-red-400"
                             title="Eliminar usuario"
                           >
@@ -385,6 +368,28 @@ export default function AdminUsersPage() {
               </div>
 
               <div>
+                <label className="block text-sm font-medium mb-1">
+                  Teléfono (opcional)
+                </label>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  value={editingUser.phone || ""}
+                  onChange={(e) =>
+                    setEditingUser({
+                      ...editingUser,
+                      phone: e.target.value.replace(/\D/g, "").slice(0, 10)
+                    })
+                  }
+                  placeholder="3001234567"
+                  className="w-full px-3 py-2 border rounded-md dark:bg-gray-700 dark:border-gray-600"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Celular colombiano de 10 dígitos (empieza con 3)
+                </p>
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium mb-1">Rol</label>
                 <select
                   value={editingUser.role}
@@ -402,7 +407,7 @@ export default function AdminUsersPage() {
             <div className="flex justify-end space-x-3 mt-6">
               <button
                 onClick={() => setShowModal(false)}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800 dark:text-gray-400"
+                className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
               >
                 Cancelar
               </button>
@@ -450,7 +455,7 @@ export default function AdminUsersPage() {
                   setNewPassword("");
                   setSelectedUser(null);
                 }}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800 dark:text-gray-400"
+                className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
               >
                 Cancelar
               </button>
@@ -459,6 +464,41 @@ export default function AdminUsersPage() {
                 className="px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700"
               >
                 Actualizar Contraseña
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-white">
+              🗑️ Eliminar Usuario
+            </h2>
+            <p className="text-gray-700 dark:text-gray-300 mb-2">
+              ¿Estás seguro de eliminar al usuario{" "}
+              <strong>{deleteUser.name}</strong>?
+            </p>
+            <p className="text-sm text-red-600 dark:text-red-400 mb-4">
+              ⚠️ Esta acción también eliminará todas sus citas y NO se puede
+              deshacer.
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setDeleteUser(null)}
+                className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  handleDeleteUser(deleteUser.id, deleteUser.name);
+                  setDeleteUser(null);
+                }}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              >
+                Sí, eliminar
               </button>
             </div>
           </div>

@@ -3,6 +3,9 @@
 import { useState, useEffect, useRef } from "react";
 import Navbar from "@/components/Navbar";
 import { toast } from "sonner";
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
+import { HORARIOS_NORMALES, HORARIOS_DOMINGO } from "@/lib/horarios";
 
 interface Appointment {
   id: number;
@@ -22,6 +25,13 @@ interface User {
   name: string;
   email: string;
   role: "admin" | "cliente";
+}
+
+interface Service {
+  id: number;
+  name: string;
+  price: number;
+  duration: number;
 }
 
 interface DayStat {
@@ -58,7 +68,6 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>("todas");
-  const [error, setError] = useState<string>("");
   const [sortOrder, setSortOrder] = useState<
     "fecha-reciente" | "fecha-lejana" | "hora-proxima"
   >("fecha-reciente");
@@ -69,6 +78,24 @@ export default function AdminDashboard() {
     id: number;
     status: string;
   } | null>(null);
+
+  // Estados para el modal de nueva cita
+  const [showNewModal, setShowNewModal] = useState(false);
+  const [clients, setClients] = useState<User[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState<string>("");
+  const [newClientMode, setNewClientMode] = useState(false);
+  const [clientName, setClientName] = useState("");
+  const [clientPhone, setClientPhone] = useState("");
+  const [selectedServiceId, setSelectedServiceId] = useState<string>("");
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [selectedTime, setSelectedTime] = useState<string>("");
+  const [newNotes, setNewNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  // Estados para el modal de eliminación
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
 
   // Guard para que StrictMode (dev) no duplique los fetch
   const mounted = useRef(false);
@@ -94,7 +121,6 @@ export default function AdminDashboard() {
   };
 
   const fetchAppointments = async () => {
-    setError("");
     try {
       const res = await fetch("/api/appointments");
 
@@ -107,9 +133,7 @@ export default function AdminDashboard() {
       setAppointments(data.appointments || []);
     } catch (error) {
       console.error("❌ Error cargando citas:", error);
-      setError(
-        error instanceof Error ? error.message : "Error al cargar las citas"
-      );
+      toast.error("❌ Error al cargar las citas");
     } finally {
       setLoading(false);
     }
@@ -177,9 +201,17 @@ export default function AdminDashboard() {
     }
   };
 
-  const deleteAppointment = async (id: number) => {
-    if (!confirm("¿Estás seguro de eliminar esta cita?")) return;
+  const confirmDeleteAppointment = (id: number) => {
+    setPendingDeleteId(id);
+    setShowDeleteModal(true);
+  };
 
+  const closeDeleteModal = () => {
+    setShowDeleteModal(false);
+    setPendingDeleteId(null);
+  };
+
+  const deleteAppointment = async (id: number) => {
     try {
       const res = await fetch(`/api/admin/appointments?id=${id}`, {
         method: "DELETE"
@@ -195,6 +227,130 @@ export default function AdminDashboard() {
     } catch (error) {
       console.error("Error eliminando cita:", error);
       toast.error("❌ Error al eliminar la cita");
+    }
+  };
+
+  const formatDateForApi = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  const getTimeSlots = () => {
+    if (!selectedDate) return HORARIOS_NORMALES;
+    return selectedDate.getDay() === 0
+      ? HORARIOS_DOMINGO
+      : HORARIOS_NORMALES;
+  };
+
+  const openNewAppointmentModal = async () => {
+    setShowNewModal(true);
+    try {
+      const [clientsRes, servicesRes] = await Promise.all([
+        fetch("/api/admin/users"),
+        fetch("/api/services")
+      ]);
+      if (clientsRes.ok) {
+        const data = await clientsRes.json();
+        setClients(
+          (data.users || []).filter((u: User) => u.role === "cliente")
+        );
+      }
+      if (servicesRes.ok) {
+        const data = await servicesRes.json();
+        setServices(data.services || []);
+      }
+    } catch (error) {
+      console.error("Error cargando datos para nueva cita:", error);
+    }
+  };
+
+  const closeNewAppointmentModal = () => {
+    setShowNewModal(false);
+    setSelectedUserId("");
+    setNewClientMode(false);
+    setClientName("");
+    setClientPhone("");
+    setSelectedServiceId("");
+    setSelectedDate(null);
+    setSelectedTime("");
+    setNewNotes("");
+  };
+
+  const submitNewAppointment = async () => {
+    if (newClientMode) {
+      if (!clientName.trim() || !clientPhone.trim()) {
+        toast.warning("⚠️ Ingresa nombre y teléfono del cliente");
+        return;
+      }
+    } else if (!selectedUserId) {
+      toast.warning("⚠️ Selecciona un cliente");
+      return;
+    }
+
+    if (!selectedServiceId) {
+      toast.warning("⚠️ Selecciona un servicio");
+      return;
+    }
+
+    if (!selectedDate) {
+      toast.warning("⚠️ Selecciona una fecha");
+      return;
+    }
+
+    if (!selectedTime) {
+      toast.warning("⚠️ Selecciona una hora");
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      const body: {
+        serviceId: number;
+        date: string;
+        time: string;
+        notes?: string;
+        userId?: number;
+        client?: { name: string; phone: string };
+      } = {
+        serviceId: Number(selectedServiceId),
+        date: formatDateForApi(selectedDate),
+        time: selectedTime,
+        notes: newNotes || undefined
+      };
+
+      if (newClientMode) {
+        body.client = {
+          name: clientName.trim(),
+          phone: clientPhone.trim()
+        };
+      } else {
+        body.userId = Number(selectedUserId);
+      }
+
+      const res = await fetch("/api/admin/appointments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        toast.success(`✅ Cita creada — Código: ${data.confirmationCode}`);
+        closeNewAppointmentModal();
+        fetchAppointments();
+        fetchStats();
+      } else {
+        toast.error(`❌ ${data.error || "Error al crear la cita"}`);
+      }
+    } catch (error) {
+      console.error("Error creando cita:", error);
+      toast.error("❌ Error al crear la cita");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -249,70 +405,180 @@ export default function AdminDashboard() {
   };
 
   // Modal de confirmación
-  const ConfirmModal = () => {
-    if (!showConfirmModal || !pendingAction) return null;
+  const statusText = pendingAction
+    ? getStatusText(pendingAction.status)
+    : "";
 
-    const statusText = getStatusText(pendingAction.status);
-
-    return (
+  const newAppointmentModal = showNewModal ? (
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center animate-in fade-in duration-200">
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden animate-in zoom-in duration-200">
-          <div
-            className={`p-4 ${pendingAction.status === "cancelada" ? "bg-red-50 dark:bg-red-900/20" : "bg-blue-50 dark:bg-blue-900/20"}`}
-          >
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-lg w-full mx-4 overflow-hidden animate-in zoom-in duration-200">
+          <div className="p-4 bg-blue-50 dark:bg-blue-900/20">
             <div className="flex items-center gap-3">
-              <span className="text-2xl">
-                {pendingAction.status === "cancelada" ? "⚠️" : "✂️"}
-              </span>
+              <span className="text-2xl">📅</span>
               <h3 className="text-lg font-bold text-gray-800 dark:text-white">
-                Confirmar acción
+                Nueva Cita
               </h3>
             </div>
           </div>
 
-          <div className="p-6">
-            <p className="text-gray-700 dark:text-gray-300 mb-4">
-              ¿Estás seguro de que deseas marcar esta cita como{" "}
-              <span
-                className={`font-bold px-2 py-0.5 rounded ${getStatusColor(pendingAction.status)}`}
+          <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Cliente
+              </label>
+              <select
+                value={newClientMode ? "NUEVO_CLIENTE" : selectedUserId}
+                onChange={(e) => {
+                  if (e.target.value === "NUEVO_CLIENTE") {
+                    setNewClientMode(true);
+                    setSelectedUserId("");
+                  } else {
+                    setNewClientMode(false);
+                    setSelectedUserId(e.target.value);
+                  }
+                }}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300"
               >
-                {statusText}
-              </span>
-              ?
-            </p>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Esta acción no se puede deshacer.
-            </p>
+                <option value="">Selecciona un cliente...</option>
+                <option value="NUEVO_CLIENTE">
+                  ➕ Nuevo cliente (mostrador)
+                </option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({c.email})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {newClientMode && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Nombre del cliente
+                  </label>
+                  <input
+                    type="text"
+                    value={clientName}
+                    onChange={(e) =>
+                      setClientName(
+                        e.target.value.replace(
+                          /[^A-Za-zÁáÉéÍíÓóÚúÑñ\s]/g,
+                          ""
+                        )
+                      )
+                    }
+                    placeholder="Nombre completo"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Teléfono
+                  </label>
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    value={clientPhone}
+                    onChange={(e) =>
+                      setClientPhone(
+                        e.target.value.replace(/\D/g, "").slice(0, 10)
+                      )
+                    }
+                    placeholder="3001234567"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+                  />
+                </div>
+              </>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Servicio
+              </label>
+              <select
+                value={selectedServiceId}
+                onChange={(e) => setSelectedServiceId(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+              >
+                <option value="">Selecciona un servicio...</option>
+                {services.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} — ${s.price.toLocaleString()}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Fecha
+                </label>
+                <DatePicker
+                  selected={selectedDate}
+                  onChange={(date: Date | null) => {
+                    setSelectedDate(date);
+                    setSelectedTime("");
+                  }}
+                  minDate={new Date()}
+                  dateFormat="dd/MM/yyyy"
+                  placeholderText="Selecciona fecha"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Hora
+                </label>
+                <select
+                  value={selectedTime}
+                  onChange={(e) => setSelectedTime(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+                >
+                  <option value="">Selecciona hora...</option>
+                  {getTimeSlots().map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Notas (opcional)
+              </label>
+              <textarea
+                value={newNotes}
+                onChange={(e) => setNewNotes(e.target.value)}
+                rows={2}
+                placeholder="Ej: corte con máquina, cliente frecuente..."
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+              />
+            </div>
           </div>
 
           <div className="flex gap-3 p-4 border-t border-gray-200 dark:border-gray-700">
             <button
-              onClick={() => {
-                setShowConfirmModal(false);
-                setPendingAction(null);
-              }}
+              onClick={closeNewAppointmentModal}
+              disabled={submitting}
               className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
             >
               Cancelar
             </button>
             <button
-              onClick={confirmUpdateStatus}
-              className={`
-                flex-1 px-4 py-2 rounded-lg text-white font-medium transition-colors
-                ${
-                  pendingAction.status === "cancelada"
-                    ? "bg-red-600 hover:bg-red-700"
-                    : "bg-blue-600 hover:bg-blue-700"
-                }
-              `}
+              onClick={submitNewAppointment}
+              disabled={submitting}
+              className="flex-1 px-4 py-2 rounded-lg text-white font-medium bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50"
             >
-              Sí, {statusText}
+              {submitting ? "Creando..." : "Crear Cita"}
             </button>
           </div>
         </div>
       </div>
-    );
-  };
+    ) : null;
 
   if (loading) {
     return (
@@ -449,22 +715,24 @@ export default function AdminDashboard() {
                 </button>
               </div>
 
-              <button
-                onClick={() => {
-                  fetchAppointments();
-                  fetchStats();
-                }}
-                className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
-              >
-                🔄 Actualizar
-              </button>
-            </div>
-
-            {error && (
-              <div className="mb-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-                ❌ {error}
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={openNewAppointmentModal}
+                  className="px-4 py-2 rounded-md text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors"
+                >
+                  📅 Nueva Cita
+                </button>
+                <button
+                  onClick={() => {
+                    fetchAppointments();
+                    fetchStats();
+                  }}
+                  className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                >
+                  🔄 Actualizar
+                </button>
               </div>
-            )}
+            </div>
 
             {/* Tabla de Citas */}
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
@@ -560,7 +828,7 @@ export default function AdminDashboard() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm">
                             <button
-                              onClick={() => deleteAppointment(apt.id)}
+                              onClick={() => confirmDeleteAppointment(apt.id)}
                               className="text-red-600 hover:text-red-700 text-sm"
                               title="Eliminar cita"
                             >
@@ -695,7 +963,108 @@ export default function AdminDashboard() {
         )}
       </div>
 
-      <ConfirmModal />
+      {showConfirmModal && pendingAction && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden animate-in zoom-in duration-200">
+            <div
+              className={`p-4 ${pendingAction.status === "cancelada" ? "bg-red-50 dark:bg-red-900/20" : "bg-blue-50 dark:bg-blue-900/20"}`}
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">
+                  {pendingAction.status === "cancelada" ? "⚠️" : "✂️"}
+                </span>
+                <h3 className="text-lg font-bold text-gray-800 dark:text-white">
+                  Confirmar acción
+                </h3>
+              </div>
+            </div>
+
+            <div className="p-6">
+              <p className="text-gray-700 dark:text-gray-300 mb-4">
+                ¿Estás seguro de que deseas marcar esta cita como{" "}
+                <span
+                  className={`font-bold px-2 py-0.5 rounded ${getStatusColor(pendingAction.status)}`}
+                >
+                  {statusText}
+                </span>
+                ?
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Esta acción no se puede deshacer.
+              </p>
+            </div>
+
+            <div className="flex gap-3 p-4 border-t border-gray-200 dark:border-gray-700">
+              <button
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  setPendingAction(null);
+                }}
+                className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmUpdateStatus}
+                className={`
+                  flex-1 px-4 py-2 rounded-lg text-white font-medium transition-colors
+                  ${
+                    pendingAction.status === "cancelada"
+                      ? "bg-red-600 hover:bg-red-700"
+                      : "bg-blue-600 hover:bg-blue-700"
+                  }
+                `}
+              >
+                Sí, {statusText}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {newAppointmentModal}
+
+      {showDeleteModal && pendingDeleteId && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden animate-in zoom-in duration-200">
+            <div className="p-4 bg-red-50 dark:bg-red-900/20">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">🗑️</span>
+                <h3 className="text-lg font-bold text-gray-800 dark:text-white">
+                  Eliminar cita
+                </h3>
+              </div>
+            </div>
+
+            <div className="p-6">
+              <p className="text-gray-700 dark:text-gray-300 mb-4">
+                ¿Estás seguro de que deseas eliminar esta cita?
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Esta acción no se puede deshacer.
+              </p>
+            </div>
+
+            <div className="flex gap-3 p-4 border-t border-gray-200 dark:border-gray-700">
+              <button
+                onClick={closeDeleteModal}
+                className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  closeDeleteModal();
+                  deleteAppointment(pendingDeleteId);
+                }}
+                className="flex-1 px-4 py-2 rounded-lg text-white font-medium bg-red-600 hover:bg-red-700 transition-colors"
+              >
+                Sí, eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

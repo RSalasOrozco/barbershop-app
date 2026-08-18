@@ -13,19 +13,24 @@ interface UserRow {
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password } = await request.json();
+    const { identifier, password } = await request.json();
 
-    if (!email || !password) {
+    if (!identifier || !password) {
       return NextResponse.json(
-        { error: "Email y contraseña son obligatorios" },
+        { error: "Correo o teléfono y contraseña son obligatorios" },
         { status: 400 }
       );
     }
 
-    // Buscar usuario
+    // Normalizar teléfono (quitar espacios, guiones, paréntesis)
+    const normalizedIdentifier = String(identifier)
+      .trim()
+      .replace(/[\s\-\(\)]/g, "");
+
+    // Buscar usuario por correo o teléfono
     const user = db
-      .prepare("SELECT * FROM users WHERE email = ?")
-      .get(email) as UserRow | undefined;
+      .prepare("SELECT * FROM users WHERE email = ? OR phone = ?")
+      .get(normalizedIdentifier, normalizedIdentifier) as UserRow | undefined;
 
     if (!user) {
       return NextResponse.json(

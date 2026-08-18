@@ -1,29 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 import { getSession } from "@/lib/auth";
-
-// ✅ Función para generar código único de confirmación
-function generarCodigoConfirmacion(): string {
-  // Generar código como: BAR-1234 (4 números aleatorios)
-  const numero = Math.floor(1000 + Math.random() * 9000);
-  return `BAR-${numero}`;
-}
-
-// ✅ Función para verificar que el código no exista
-function generarCodigoUnico(): string {
-  let codigo: string;
-  let existe: boolean;
-
-  do {
-    codigo = generarCodigoConfirmacion();
-    const verificar = db
-      .prepare("SELECT id FROM appointments WHERE confirmation_code = ?")
-      .get(codigo);
-    existe = !!verificar;
-  } while (existe);
-
-  return codigo;
-}
+import {
+  generarCodigoUnico,
+  verificarHorarioOcupado
+} from "@/lib/appointments";
 
 export async function GET(request: NextRequest) {
   try {
@@ -95,16 +76,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const existing = db
-      .prepare(
-        `
-      SELECT id FROM appointments 
-      WHERE date = ? AND time = ? AND status != 'cancelada'
-    `
-      )
-      .get(date, time);
-
-    if (existing) {
+    if (verificarHorarioOcupado(date, time)) {
       return NextResponse.json(
         { error: "Este horario ya está ocupado" },
         { status: 400 }

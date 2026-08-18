@@ -6,6 +6,7 @@ import Navbar from "@/components/Navbar";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { toast } from "sonner";
+import { HORARIOS_NORMALES, HORARIOS_DOMINGO } from "@/lib/horarios";
 
 interface Service {
   id: number;
@@ -21,34 +22,6 @@ interface User {
   role: "admin" | "cliente";
 }
 
-// Horarios normales (Lunes a Sábado)
-const horariosNormales = [
-  "09:00",
-  "09:30",
-  "10:00",
-  "10:30",
-  "11:00",
-  "11:30",
-  "14:00",
-  "14:30",
-  "15:00",
-  "15:30",
-  "16:00",
-  "16:30",
-  "17:00"
-];
-
-// Horarios para Domingos (solo hasta 2pm)
-const horariosDomingo = [
-  "09:00",
-  "09:30",
-  "10:00",
-  "10:30",
-  "11:00",
-  "11:30",
-  "14:00"
-];
-
 export default function AgendarCitaPage() {
   const router = useRouter();
   const [services, setServices] = useState<Service[]>([]);
@@ -62,10 +35,10 @@ export default function AgendarCitaPage() {
   const [timeLeft, setTimeLeft] = useState(0);
 
   const getTimeSlots = useCallback(() => {
-    if (!selectedDate) return horariosNormales;
+    if (!selectedDate) return HORARIOS_NORMALES;
     const dia = selectedDate.getDay();
-    if (dia === 0) return horariosDomingo;
-    return horariosNormales;
+    if (dia === 0) return HORARIOS_DOMINGO;
+    return HORARIOS_NORMALES;
   }, [selectedDate]);
 
   const getAvailableTimeSlots = useCallback(() => {
@@ -145,7 +118,7 @@ export default function AgendarCitaPage() {
       const res = await fetch("/api/services");
       const data = await res.json();
       setServices(data.services);
-      toast.success("✅ Servicios cargados", { id: loadingToast });
+      toast.dismiss(loadingToast);
     } catch {
       toast.error("❌ Error al cargar servicios", { id: loadingToast });
     }
@@ -155,7 +128,7 @@ export default function AgendarCitaPage() {
     e.preventDefault();
 
     if (!selectedService || !selectedDate || !selectedTime) {
-      toast.error("⚠️ Completa todos los campos");
+      toast.warning("⚠️ Completa todos los campos");
       return;
     }
 
@@ -171,7 +144,7 @@ export default function AgendarCitaPage() {
         horaCitaNum < horaActual ||
         (horaCitaNum === horaActual && minutoCitaNum < minutoActual)
       ) {
-        toast.error(`⏰ No puedes agendar para las ${selectedTime} (ya pasó)`);
+        toast.warning(`⏰ No puedes agendar para las ${selectedTime} (ya pasó)`);
         return;
       }
     }
@@ -207,7 +180,7 @@ export default function AgendarCitaPage() {
 
       setConfirmationCode(data.confirmationCode);
 
-      toast.success("¡Cita agendada exitosamente!", {
+      toast.success("✅ ¡Cita agendada exitosamente!", {
         id: loadingToast
       });
 

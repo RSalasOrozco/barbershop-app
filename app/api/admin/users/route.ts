@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
         u.id,
         u.name,
         u.email,
+        u.phone,
         u.role,
         u.created_at,
         COUNT(a.id) as total_appointments,
@@ -56,7 +57,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
     }
 
-    const { id, name, email, role } = await request.json();
+    const { id, name, email, phone, role } = await request.json();
 
     if (!id) {
       return NextResponse.json(
@@ -88,6 +89,29 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    // Validar y verificar que el teléfono no esté duplicado (excepto para el mismo usuario)
+    let cleanPhone: string | null = null;
+    if (phone !== undefined && phone !== null && phone !== "") {
+      cleanPhone = String(phone).replace(/[\s\-\(\)]/g, "");
+      const phoneRegex = /^\d+$/;
+      if (!phoneRegex.test(cleanPhone) || cleanPhone.length !== 10 || !cleanPhone.startsWith("3")) {
+        return NextResponse.json(
+          { error: "El teléfono debe ser un celular colombiano de 10 dígitos (empieza con 3)" },
+          { status: 400 }
+        );
+      }
+
+      const existingPhone = db
+        .prepare("SELECT id FROM users WHERE phone = ? AND id != ?")
+        .get(cleanPhone, id);
+      if (existingPhone) {
+        return NextResponse.json(
+          { error: "El número de teléfono ya está en uso por otro usuario" },
+          { status: 400 }
+        );
+      }
+    }
+
     const updates: string[] = [];
     const values: (string | number)[] = [];
 
@@ -98,6 +122,10 @@ export async function PUT(request: NextRequest) {
     if (email) {
       updates.push("email = ?");
       values.push(email);
+    }
+    if (phone !== undefined && phone !== null) {
+      updates.push("phone = ?");
+      values.push(cleanPhone as string);
     }
     if (role) {
       updates.push("role = ?");
