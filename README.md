@@ -116,6 +116,19 @@ node scripts/generate-license.js "Barbería El Rami" 365 4
 
 Esto crea el archivo `license.json` (en la raíz del proyecto) que **se entrega junto con la app**. Contiene: negocio, fechas de emisión/vencimiento, máximo de peluqueros y una firma.
 
+### Preparar la carpeta de entrega (una sola herramienta)
+
+En la raíz del proyecto hay dos accesos rápidos:
+
+- **`preparar-entrega.bat`**: te pregunta nombre del negocio, días y máximo de peluqueros, y automáticamente:
+  - copia el proyecto a `entregas\<Negocio>\`,
+  - **quita los datos de prueba** (`barbershop.db`, `backups/`),
+  - **quita la carpeta `scripts/`** (para que el cliente no pueda generar sus propias licencias),
+  - genera la `license.json` del cliente dentro.
+  Esa carpeta queda **lista para el USB**.
+
+- **`renovar-licencia.bat`**: regenera la licencia de un cliente en `licencias\<Negocio>\license.json`. Ese archivo se envía al cliente (WhatsApp/email) y este **solo reemplaza** su `license.json` (la app la relee automáticamente; si acaso, reinicia con `Iniciar BarberTrack.bat`).
+
 ### Qué hace la app con la licencia
 
 - Si falta el archivo, es inválido o **venció**: bloquea el acceso al panel y a las APIs, y muestra una pantalla de aviso en `/license`.
