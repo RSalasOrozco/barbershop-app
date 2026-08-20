@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     const guard = await requireAdmin(request);
     if (guard.error) return guard.error;
 
-    const { name, phone, color, notes } = await request.json();
+    const { name, phone, color, notes, commissionType, commissionValue } = await request.json();
 
     if (!name || name.trim().length < 2) {
       return NextResponse.json({ error: "El nombre debe tener al menos 2 caracteres" }, { status: 400 });
@@ -71,15 +71,20 @@ export async function POST(request: NextRequest) {
     }
 
     const cleanPhone = sanitizePhone(phone);
+    const commType = commissionType === "porcentaje" || commissionType === "salario" ? commissionType : "ninguna";
+    const commValue = Math.max(0, Number(commissionValue) || 0);
+
     const result = db
       .prepare(
-        "INSERT INTO barbers (name, phone, color, active, notes) VALUES (?, ?, ?, 1, ?)"
+        "INSERT INTO barbers (name, phone, color, active, notes, commission_type, commission_value) VALUES (?, ?, ?, 1, ?, ?, ?)"
       )
       .run(
         name.trim(),
         cleanPhone,
         color || BARBER_COLORS[Math.floor(Math.random() * BARBER_COLORS.length)],
-        notes || ""
+        notes || "",
+        commType,
+        commValue
       );
 
     const barberId = result.lastInsertRowid as number;
@@ -107,27 +112,52 @@ export async function PUT(request: NextRequest) {
     const guard = await requireAdmin(request);
     if (guard.error) return guard.error;
 
-    const { id, name, phone, color, active, notes } = await request.json();
+    const { id, name, phone, color, active, notes, commissionType, commissionValue } = await request.json();
 
     if (!id) {
       return NextResponse.json({ error: "ID de peluquero requerido" }, { status: 400 });
     }
 
-    const existing = db.prepare("SELECT id FROM barbers WHERE id = ?").get(id);
+    const existing = db.prepare("SELECT * FROM barbers WHERE id = ?").get(id) as
+      | {
+          id: number;
+          name: string;
+          phone: string | null;
+          color: string;
+          active: number;
+          notes: string | null;
+          commission_type: string | null;
+          commission_value: number | null;
+        }
+      | undefined;
     if (!existing) {
       return NextResponse.json({ error: "Peluquero no encontrado" }, { status: 404 });
     }
 
-    const cleanPhone = sanitizePhone(phone);
+    const cleanPhone = sanitizePhone(phone !== undefined ? phone : existing.phone);
+    const newName = (name !== undefined ? String(name) : existing.name).trim();
+    const newColor = color || existing.color || "#f59e0b";
+    const newActive = active === undefined ? existing.active : active ? 1 : 0;
+    const newNotes = notes !== undefined ? String(notes) : existing.notes || "";
+    const commType =
+      commissionType === undefined
+        ? existing.commission_type || "ninguna"
+        : commissionType === "porcentaje" || commissionType === "salario" || commissionType === "ninguna"
+          ? commissionType
+          : existing.commission_type || "ninguna";
+    const commValue =
+      commissionValue !== undefined ? Math.max(0, Number(commissionValue) || 0) : existing.commission_value || 0;
 
     db.prepare(
-      `UPDATE barbers SET name = ?, phone = ?, color = ?, active = ?, notes = ? WHERE id = ?`
+      `UPDATE barbers SET name = ?, phone = ?, color = ?, active = ?, notes = ?, commission_type = ?, commission_value = ? WHERE id = ?`
     ).run(
-      (name || "").trim(),
+      newName,
       cleanPhone,
-      color || "#f59e0b",
-      active === undefined ? 1 : active ? 1 : 0,
-      notes || "",
+      newColor,
+      newActive,
+      newNotes,
+      commType,
+      commValue,
       id
     );
 

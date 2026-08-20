@@ -132,7 +132,7 @@ export default function AdminBarbersPage() {
     }
   };
 
-  const saveBarber = async (payload: { name: string; phone: string; color: string; active: boolean; notes: string }) => {
+  const saveBarber = async (payload: { name: string; phone: string; color: string; active: boolean; notes: string; commissionType: string; commissionValue: number }) => {
     try {
       const res = await fetch("/api/admin/barbers", {
         method: isNew ? "POST" : "PUT",
@@ -283,6 +283,13 @@ export default function AdminBarbersPage() {
                   <button onClick={() => openSchedules(b)} className="btn btn-ghost flex-1 text-xs py-1.5">🕒 Horarios</button>
                   <button onClick={() => { setAbsenceBarber(b); setShowAbsenceModal(true); }} className="btn btn-ghost flex-1 text-xs py-1.5">⚠️ Novedad</button>
                 </div>
+                {b.commission_type && b.commission_type !== "ninguna" && (
+                  <div className="mt-3 text-xs text-stone-400 bg-stone-800/60 rounded-lg px-3 py-2">
+                    {b.commission_type === "porcentaje"
+                      ? `💰 ${b.commission_value}% de comisión por servicio`
+                      : `💰 Sueldo fijo mensual: ${formatCurrency(b.commission_value || 0)}`}
+                  </div>
+                )}
                 <div className="flex gap-2 mt-2">
                   <button onClick={() => toggleActive(b)} className="btn btn-ghost flex-1 text-xs py-1.5">
                     {b.active ? "⏸ Desactivar" : "▶ Activar"}
@@ -478,13 +485,15 @@ function BarberFormModal({
   isNew: boolean;
   barber: Barber | null;
   onClose: () => void;
-  onSave: (payload: { name: string; phone: string; color: string; active: boolean; notes: string }) => void;
+  onSave: (payload: { name: string; phone: string; color: string; active: boolean; notes: string; commissionType: string; commissionValue: number }) => void;
 }) {
   const [name, setName] = useState(barber?.name || "");
   const [phone, setPhone] = useState(barber?.phone || "");
   const [color, setColor] = useState(barber?.color || BARBER_COLORS[0]);
   const [active, setActive] = useState(barber?.active !== 0);
   const [notes, setNotes] = useState(barber?.notes || "");
+  const [commissionType, setCommissionType] = useState(barber?.commission_type || "ninguna");
+  const [commissionValue, setCommissionValue] = useState(String(barber?.commission_value || ""));
   const [saving, setSaving] = useState(false);
 
   const submit = () => {
@@ -492,8 +501,20 @@ function BarberFormModal({
       toast.warning("El nombre debe tener al menos 2 caracteres");
       return;
     }
+    if (commissionType !== "ninguna" && (!commissionValue || Number(commissionValue) <= 0)) {
+      toast.warning("Ingresa un valor válido para la comisión o sueldo");
+      return;
+    }
     setSaving(true);
-    onSave({ name: name.trim(), phone: phone.trim(), color, active, notes: notes.trim() });
+    onSave({
+      name: name.trim(),
+      phone: phone.trim(),
+      color,
+      active,
+      notes: notes.trim(),
+      commissionType,
+      commissionValue: Number(commissionValue) || 0
+    });
   };
 
   return (
@@ -547,6 +568,34 @@ function BarberFormModal({
               className="input resize-none"
               placeholder="Especialidad, observaciones..."
             />
+          </div>
+          <div>
+            <label className="label">Comisión / Sueldo</label>
+            <div className="grid grid-cols-2 gap-3">
+              <select value={commissionType} onChange={(e) => setCommissionType(e.target.value)} className="input">
+                <option value="ninguna">Sin comisión</option>
+                <option value="porcentaje">% de cada servicio</option>
+                <option value="salario">Sueldo fijo mensual</option>
+              </select>
+              {commissionType !== "ninguna" && (
+                <input
+                  type="number"
+                  min="0"
+                  inputMode="decimal"
+                  value={commissionValue}
+                  onChange={(e) => setCommissionValue(e.target.value)}
+                  className="input"
+                  placeholder={commissionType === "porcentaje" ? "Ej: 20" : "Ej: 800000"}
+                />
+              )}
+            </div>
+            <p className="text-xs text-stone-500 mt-1">
+              {commissionType === "porcentaje"
+                ? "Se calcula como % del ingreso generado por este peluquero en el mes (se ve en Finanzas)."
+                : commissionType === "salario"
+                  ? "Monto fijo mensual que se descuenta de la ganancia (se ve en Finanzas)."
+                  : "Sin comisión: todo el ingreso del peluquero queda para el negocio."}
+            </p>
           </div>
           <div>
             <label className="flex items-center gap-2 cursor-pointer">

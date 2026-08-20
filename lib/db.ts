@@ -76,6 +76,15 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (barber_id) REFERENCES barbers(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS expenses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL,
+    description TEXT NOT NULL,
+    amount REAL NOT NULL,
+    category TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 function columnNames(table: string): string[] {
@@ -102,6 +111,26 @@ if (!apptColumns.includes("client_name")) {
 if (!apptColumns.includes("client_phone")) {
   db.exec("ALTER TABLE appointments ADD COLUMN client_phone TEXT");
   console.log("✅ Columna client_phone agregada a appointments");
+}
+
+// Migración financiera
+if (!apptColumns.includes("payment_method")) {
+  db.exec("ALTER TABLE appointments ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'efectivo'");
+  console.log("✅ Columna payment_method agregada a appointments");
+}
+if (!apptColumns.includes("paid_amount")) {
+  db.exec("ALTER TABLE appointments ADD COLUMN paid_amount REAL");
+  console.log("✅ Columna paid_amount agregada a appointments");
+}
+
+const barberColumns = columnNames("barbers");
+if (!barberColumns.includes("commission_type")) {
+  db.exec("ALTER TABLE barbers ADD COLUMN commission_type TEXT NOT NULL DEFAULT 'ninguna'");
+  console.log("✅ Columna commission_type agregada a barbers");
+}
+if (!barberColumns.includes("commission_value")) {
+  db.exec("ALTER TABLE barbers ADD COLUMN commission_value REAL NOT NULL DEFAULT 0");
+  console.log("✅ Columna commission_value agregada a barbers");
 }
 
 // Datos iniciales: servicios

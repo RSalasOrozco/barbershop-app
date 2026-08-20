@@ -36,7 +36,12 @@ export default function AdminDashboard() {
   const [showNewModal, setShowNewModal] = useState(false);
   const [reassignTarget, setReassignTarget] = useState<Appointment | null>(null);
 
-  const [confirmAction, setConfirmAction] = useState<{ id: number; status: string } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{
+    id: number;
+    status: string;
+    paymentMethod?: string;
+    paidAmount?: string;
+  } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Appointment | null>(null);
 
   const mounted = useRef(false);
@@ -129,10 +134,16 @@ export default function AdminDashboard() {
   const updateStatus = async (id: number, status: string) => {
     if (!confirmAction) return;
     try {
+      const payload: Record<string, unknown> = { id, status };
+      if (status === "completada") {
+        if (confirmAction.paymentMethod) payload.paymentMethod = confirmAction.paymentMethod;
+        const amt = confirmAction.paidAmount !== undefined && confirmAction.paidAmount !== "" ? Number(confirmAction.paidAmount) : null;
+        if (amt && amt > 0) payload.paidAmount = amt;
+      }
       const res = await fetch("/api/admin/appointments", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, status })
+        body: JSON.stringify(payload)
       });
       if (res.ok) {
         refresh();
@@ -340,8 +351,18 @@ export default function AdminDashboard() {
                               <div className="text-sm text-stone-200">{formatDateShort(a.date)}</div>
                               <div className="text-xs text-stone-500">{a.time}</div>
                             </td>
-                            <td className="table-cell text-sm text-emerald-400 font-medium">
-                              {formatCurrency(a.service_price)}
+                            <td className="table-cell">
+                              <div className="text-sm text-emerald-400 font-medium">
+                                {formatCurrency(a.service_price)}
+                              </div>
+                              {a.status === "completada" && (
+                                <div className="text-[10px] text-stone-500 uppercase">
+                                  {a.payment_method || "efectivo"}
+                                  {a.paid_amount != null && a.paid_amount !== a.service_price
+                                    ? ` · ${formatCurrency(a.paid_amount)}`
+                                    : ""}
+                                </div>
+                              )}
                             </td>
                             <td className="table-cell">{statusSelect(a)}</td>
                             <td className="table-cell">
@@ -443,11 +464,42 @@ export default function AdminDashboard() {
             <div className="p-5 border-b border-stone-800">
               <h3 className="text-lg font-bold text-stone-50">Confirmar acción</h3>
             </div>
-            <div className="p-5">
+            <div className="p-5 space-y-4">
               <p className="text-stone-300">
                 ¿Marcar la cita como{" "}
                 <span className="font-bold text-amber-400">{STATUS_META[confirmAction.status]?.label}</span>?
               </p>
+              {confirmAction.status === "completada" && (
+                <>
+                  <div>
+                    <label className="label">Forma de pago</label>
+                    <select
+                      value={confirmAction.paymentMethod || "efectivo"}
+                      onChange={(e) => setConfirmAction((prev) => prev && { ...prev, paymentMethod: e.target.value })}
+                      className="input"
+                    >
+                      <option value="efectivo">💵 Efectivo</option>
+                      <option value="tarjeta">💳 Tarjeta</option>
+                      <option value="transferencia">📱 Transferencia</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Monto cobrado</label>
+                    <input
+                      type="number"
+                      min="0"
+                      inputMode="numeric"
+                      value={confirmAction.paidAmount ?? String(appointments.find((a) => a.id === confirmAction.id)?.service_price ?? "")}
+                      onChange={(e) => setConfirmAction((prev) => prev && { ...prev, paidAmount: e.target.value })}
+                      className="input"
+                      placeholder="Ej: 25000"
+                    />
+                    <p className="text-xs text-stone-500 mt-1">
+                      Precio del servicio: {formatCurrency(appointments.find((a) => a.id === confirmAction.id)?.service_price ?? 0)}
+                    </p>
+                  </div>
+                </>
+              )}
             </div>
             <div className="flex gap-3 p-5 border-t border-stone-800">
               <button onClick={() => setConfirmAction(null)} className="btn btn-ghost flex-1">Cancelar</button>

@@ -15,6 +15,8 @@ export interface Appointment {
   service_duration: number;
   barber_name: string | null;
   barber_color: string | null;
+  payment_method?: string;
+  paid_amount?: number | null;
 }
 
 export interface Barber {
@@ -27,6 +29,17 @@ export interface Barber {
   total_appointments: number;
   total_revenue: number;
   upcoming_appointments: number;
+  commission_type?: string;
+  commission_value?: number;
+}
+
+export interface Expense {
+  id: number;
+  date: string;
+  description: string;
+  amount: number;
+  category: string | null;
+  created_at?: string;
 }
 
 export interface Service {
@@ -122,6 +135,34 @@ export function toISODate(date: Date): string {
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+export interface FinanceBarberRow {
+  id: number;
+  name: string;
+  color: string;
+  count: number;
+  income: number;
+  commission: number;
+  net: number;
+  commission_type: string;
+  commission_value: number;
+}
+
+export interface FinanceMonth {
+  month: string;
+  income: number;
+  expenses: number;
+  profit: number;
+  appointmentCount: number;
+  averageTicket: number;
+  previous: { income: number; expenses: number; profit: number };
+  byDay: { date: string; count: number; income: number }[];
+  byBarber: FinanceBarberRow[];
+  byService: { name: string; count: number; income: number }[];
+  byPaymentMethod: { method: string; count: number; income: number }[];
+  expensesList: Expense[];
+  last12Months: { month: string; income: number; expenses: number; profit: number }[];
 }
 
 export const STATUS_META: Record<string, { label: string; cls: string; dot: string }> = {

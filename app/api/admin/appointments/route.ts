@@ -166,23 +166,25 @@ export async function POST(request: NextRequest) {
         if (existing) {
           targetUserId = existing.id;
           clientName = existing.name;
-        } else {
-          // Si no coincide el teléfono, intentar por nombre exacto (cliente único)
-          const byName = db
-            .prepare("SELECT id, name, phone FROM users WHERE role = 'cliente' AND name = ?")
-            .all(clientName) as { id: number; name: string; phone: string | null }[];
-          if (byName.length === 1) {
-            targetUserId = byName[0].id;
-            clientName = byName[0].name;
-          } else {
-            const email = `walkin-${randomBytes(6).toString("hex")}@barberia.local`;
-            const randomPassword = bcrypt.hashSync(randomBytes(12).toString("hex"), 10);
-            const result = db
-              .prepare("INSERT INTO users (name, email, phone, password, role) VALUES (?, ?, ?, ?, 'cliente')")
-              .run(clientName, email, clientPhone, randomPassword);
-            targetUserId = result.lastInsertRowid as number;
-          }
         }
+      }
+      if (!targetUserId) {
+        // Si no coincide el teléfono, intentar por nombre exacto (cliente único)
+        const byName = db
+          .prepare("SELECT id, name, phone FROM users WHERE role = 'cliente' AND name = ?")
+          .all(clientName) as { id: number; name: string; phone: string | null }[];
+        if (byName.length === 1) {
+          targetUserId = byName[0].id;
+          clientName = byName[0].name;
+        }
+      }
+      if (!targetUserId) {
+        const email = `walkin-${randomBytes(6).toString("hex")}@barberia.local`;
+        const randomPassword = bcrypt.hashSync(randomBytes(12).toString("hex"), 10);
+        const result = db
+          .prepare("INSERT INTO users (name, email, phone, password, role) VALUES (?, ?, ?, ?, 'cliente')")
+          .run(clientName, email, clientPhone, randomPassword);
+        targetUserId = result.lastInsertRowid as number;
       }
     } else {
       return NextResponse.json({ error: "Selecciona un cliente o ingresa su nombre" }, { status: 400 });
@@ -236,7 +238,7 @@ export async function PUT(request: NextRequest) {
     const guard = await requireAdmin(request);
     if (guard.error) return guard.error;
 
-    const { id, status, barberId, date, time } = await request.json();
+    const { id, status, barberId, date, time, paymentMethod, paidAmount } = await request.json();
 
     if (!id) {
       return NextResponse.json({ error: "ID requerido" }, { status: 400 });
@@ -300,7 +302,23 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Estado no válido" }, { status: 400 });
     }
 
-    db.prepare("UPDATE appointments SET status = ? WHERE id = ?").run(status, id);
+    const validMethods = ["efectivo", "tarjeta", "transferencia"];
+    let paymentMethodValue: string | null = null;
+    let paidAmountValue: number | null = null;
+
+    if (status === "completada") {
+      paymentMethodValue = validMethods.includes(paymentMethod) ? paymentMethod : "efectivo";
+      if (typeof paidAmount === "number" && paidAmount > 0) {
+        paidAmountValue = paidAmount;
+      }
+    }
+
+    db.prepare(
+      `UPDATE appointments SET status = ?,
+         payment_method = COALESCE(?, payment_method),
+         paid_amount = COALESCE(?, paid_amount)
+       WHERE id = ?`
+    ).run(status, paymentMethodValue, paidAmountValue, id);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error en PUT /api/admin/appointments:", error);
