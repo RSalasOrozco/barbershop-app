@@ -2,16 +2,13 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { toast } from "sonner";
 
-// ✅ Función de validación de email (AGREGADA)
 const validateEmail = (email: string): boolean => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
 };
 
-// ✅ Función de validación de teléfono
 const validatePhone = (phone: string): boolean => {
   const clean = phone.replace(/[\s\-\(\)]/g, "");
   return /^\d+$/.test(clean) && clean.length === 10 && clean.startsWith("3");
@@ -26,24 +23,9 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const showError = (message: string, notRegistered = false) => {
-    if (notRegistered) {
-      toast.error(`❌ ${message}`, {
-        action: {
-          label: "Registrarse",
-          onClick: () => router.push("/register")
-        }
-      });
-    } else {
-      toast.error(`❌ ${message}`);
-    }
-  };
-
   useEffect(() => {
     if (justRegistered) {
-      toast.success(
-        "✅ Cuenta creada exitosamente. Ahora puedes iniciar sesión."
-      );
+      toast.success("Cuenta creada. Ahora puedes iniciar sesión.");
     }
   }, [justRegistered]);
 
@@ -56,16 +38,12 @@ function LoginForm() {
 
     if (isEmail) {
       if (!validateEmail(value)) {
-        showError(
-          "Por favor ingresa un correo electrónico válido (ejemplo@dominio.com)"
-        );
+        toast.error("Ingresa un correo electrónico válido");
         setLoading(false);
         return;
       }
     } else if (!validatePhone(value)) {
-      showError(
-        "El teléfono debe tener 10 dígitos y empezar con 3 (celular Colombia)"
-      );
+      toast.error("El teléfono debe tener 10 dígitos y empezar con 3");
       setLoading(false);
       return;
     }
@@ -80,102 +58,83 @@ function LoginForm() {
       const data = await res.json();
 
       if (!res.ok) {
-        const notRegistered = data.code === "USER_NOT_FOUND";
-        showError(
-          data.error || "Error al iniciar sesión",
-          notRegistered
-        );
+        toast.error(data.error || "Error al iniciar sesión");
         return;
       }
 
-      // Login exitoso
-      toast.success(`✅ ¡Hola, ${data.user.name}! 👋`);
-
-      // Redirigir según el rol
-      if (data.user.role === "admin") {
-        router.push("/admin");
-      } else {
-        router.push("/cliente");
+      if (data.user.role !== "admin") {
+        toast.error("El acceso de clientes está desactivado. Contacta al administrador.");
+        setLoading(false);
+        return;
       }
 
-      router.refresh(); // Importante para actualizar el estado del cliente
+      toast.success(`¡Hola, ${data.user.name}!`);
+      router.push("/admin");
+      router.refresh();
     } catch (err) {
-      showError(
-        err instanceof Error ? err.message : "Error al iniciar sesión"
-      );
+      toast.error(err instanceof Error ? err.message : "Error al iniciar sesión");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
-      <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-md w-full max-w-md">
-        <h1 className="text-2xl font-bold mb-6 text-center text-gray-900 dark:text-white">
-          Iniciar Sesión
-        </h1>
+    <div className="min-h-screen flex items-center justify-center bg-stone-950 relative overflow-hidden">
+      {/* Decoración de fondo */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(245,158,11,0.12),transparent_55%),radial-gradient(ellipse_at_bottom_left,rgba(245,158,11,0.08),transparent_55%)]" />
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Correo o Teléfono
-            </label>
-            <input
-              type="text"
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-              required
-              disabled={loading}
-              placeholder="ejemplo@correo.com o 3001234567"
-            />
-            {/* ✅ Mensaje de ayuda (AGREGADO) */}
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Usa tu correo electrónico o tu número de celular (10 dígitos)
-            </p>
+      <div className="relative w-full max-w-md px-4">
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-700 shadow-xl shadow-amber-900/40 mb-4">
+            <span className="text-3xl">💈</span>
           </div>
+          <h1 className="text-3xl font-bold text-stone-50 tracking-tight">BarberTrack</h1>
+          <p className="text-stone-500 mt-1 text-sm">Panel de administración local</p>
+        </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Contraseña
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-              required
+        <div className="card p-8">
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="label">Correo o Teléfono</label>
+              <input
+                type="text"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                className="input"
+                required
+                disabled={loading}
+                placeholder="admin@barber.com o 3001234567"
+                autoComplete="username"
+              />
+            </div>
+
+            <div>
+              <label className="label">Contraseña</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="input"
+                required
+                disabled={loading}
+                placeholder="••••••••"
+                autoComplete="current-password"
+              />
+            </div>
+
+            <button
+              type="submit"
               disabled={loading}
-              placeholder="••••••••"
-            />
-          </div>
+              className="btn btn-primary w-full py-2.5 text-base"
+            >
+              {loading ? "Iniciando sesión..." : "Ingresar"}
+            </button>
+          </form>
+        </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {loading ? "Iniciando sesión..." : "Ingresar"}
-          </button>
-        </form>
-
-        <p className="mt-4 text-center text-sm text-gray-600 dark:text-gray-400">
-          ¿No tienes cuenta?{" "}
-          <Link
-            href="/register"
-            className="text-blue-600 hover:text-blue-700 dark:text-blue-400 font-medium"
-          >
-            Regístrate aquí
-          </Link>
-        </p>
-
-        <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-md">
-          <p className="text-xs text-gray-600 dark:text-gray-300 mb-2 font-semibold">
-            🔑 Credenciales de prueba:
-          </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            Admin: admin@barber.com / admin123
-          </p>
+        <div className="mt-6 card p-4 bg-stone-900/60">
+          <p className="text-xs text-stone-400 font-semibold mb-1">🔑 Credenciales de prueba</p>
+          <p className="text-xs text-stone-500">Admin: admin@barber.com / admin123</p>
         </div>
       </div>
     </div>

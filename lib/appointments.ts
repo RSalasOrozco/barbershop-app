@@ -20,19 +20,6 @@ export function generarCodigoUnico(): string {
   return codigo;
 }
 
-export function verificarHorarioOcupado(date: string, time: string): boolean {
-  const existing = db
-    .prepare(
-      `
-      SELECT id FROM appointments 
-      WHERE date = ? AND time = ? AND status != 'cancelada'
-    `
-    )
-    .get(date, time);
-
-  return !!existing;
-}
-
 export function validatePhone(phone: string): { valid: boolean; error: string } {
   const cleanPhone = phone.replace(/[\s\-\(\)]/g, "");
 

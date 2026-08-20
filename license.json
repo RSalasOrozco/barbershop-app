@@ -1,0 +1,8 @@
+{
+  "format": "barbertrack-license-v1",
+  "business": "Barbería Demo",
+  "issuedAt": "2026-08-20",
+  "expiresAt": "2027-08-20",
+  "maxBarbers": 5,
+  "signature": "deef8b333db5bf8993e4141e1519c10c543c53a1b4c5d376ed155744eed0db15"
+}

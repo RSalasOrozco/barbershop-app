@@ -1,114 +1,47 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import Navbar from "@/components/Navbar";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Sidebar from "@/components/Sidebar";
+import NewAppointmentModal from "@/components/admin/NewAppointmentModal";
+import ReassignModal from "@/components/admin/ReassignModal";
 import { toast } from "sonner";
-import DatePicker from "react-datepicker";
-import "react-datepicker/dist/react-datepicker.css";
-import { HORARIOS_NORMALES, HORARIOS_DOMINGO } from "@/lib/horarios";
+import type { Appointment, Barber, Stats } from "@/lib/types";
+import { formatCurrency, formatDateShort, STATUS_META, toISODate } from "@/lib/types";
+import { buildWhatsAppLink, appointmentConfirmationMessage } from "@/lib/whatsapp";
 
-interface Appointment {
-  id: number;
-  client_name: string;
-  client_email: string;
-  service_name: string;
-  service_price: number;
-  date: string;
-  time: string;
-  status: string;
-  notes: string;
-  confirmation_code?: string;
-}
-
-interface User {
+interface SessionUser {
   id: number;
   name: string;
   email: string;
-  role: "admin" | "cliente";
-}
-
-interface Service {
-  id: number;
-  name: string;
-  price: number;
-  duration: number;
-}
-
-interface DayStat {
-  day_name: string;
-  day_num: string;
-  count: number;
-}
-
-interface RevenueByDay {
-  date: string;
-  total: number;
-}
-
-interface PopularService {
-  name: string;
-  count: number;
-  revenue: number;
-}
-
-interface Stats {
-  totalAppointments: number;
-  pendingAppointments: number;
-  completedAppointments: number;
-  totalRevenue: number;
-  appointmentsByDay: DayStat[];
-  revenueByDay: RevenueByDay[];
-  popularServices: PopularService[];
+  role: string;
 }
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<"citas" | "estadisticas">("citas");
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [barbers, setBarbers] = useState<Barber[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<User | null>(null);
-  const [filterStatus, setFilterStatus] = useState<string>("todas");
-  const [sortOrder, setSortOrder] = useState<
-    "fecha-reciente" | "fecha-lejana" | "hora-proxima"
-  >("fecha-reciente");
+  const [user, setUser] = useState<SessionUser | null>(null);
 
-  // Estados para el modal de confirmación
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [pendingAction, setPendingAction] = useState<{
-    id: number;
-    status: string;
-  } | null>(null);
+  const [filterStatus, setFilterStatus] = useState("todas");
+  const [filterBarber, setFilterBarber] = useState("todas");
+  const [filterDate, setFilterDate] = useState("");
+  const [search, setSearch] = useState("");
 
-  // Estados para el modal de nueva cita
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+
   const [showNewModal, setShowNewModal] = useState(false);
-  const [clients, setClients] = useState<User[]>([]);
-  const [services, setServices] = useState<Service[]>([]);
-  const [selectedUserId, setSelectedUserId] = useState<string>("");
-  const [newClientMode, setNewClientMode] = useState(false);
-  const [clientName, setClientName] = useState("");
-  const [clientPhone, setClientPhone] = useState("");
-  const [selectedServiceId, setSelectedServiceId] = useState<string>("");
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [selectedTime, setSelectedTime] = useState<string>("");
-  const [newNotes, setNewNotes] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [reassignTarget, setReassignTarget] = useState<Appointment | null>(null);
 
-  // Estados para el modal de eliminación
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ id: number; status: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Appointment | null>(null);
 
-  // Guard para que StrictMode (dev) no duplique los fetch
   const mounted = useRef(false);
 
-  useEffect(() => {
-    if (mounted.current) return;
-    mounted.current = true;
-    fetchUserData();
-    fetchAppointments();
-    fetchStats();
-  }, []);
-
-  const fetchUserData = async () => {
+  const fetchUserData = useCallback(async () => {
     try {
       const res = await fetch("/api/auth/me");
       if (res.ok) {
@@ -116,30 +49,33 @@ export default function AdminDashboard() {
         setUser(data.user);
       }
     } catch (error) {
-      console.error("Error fetching user:", error);
+      console.error(error);
     }
-  };
+  }, []);
 
-  const fetchAppointments = async () => {
+  const fetchAppointments = useCallback(async () => {
     try {
-      const res = await fetch("/api/appointments");
+      const params = new URLSearchParams();
+      if (filterStatus !== "todas") params.set("status", filterStatus);
+      if (filterBarber !== "todas") params.set("barberId", filterBarber);
+      if (filterDate) params.set("date", filterDate);
+      if (search.trim()) params.set("search", search.trim());
+      params.set("page", String(page));
+      params.set("limit", String(pageSize));
 
-      if (!res.ok) {
-        throw new Error(`Error ${res.status}: ${res.statusText}`);
-      }
-
+      const res = await fetch(`/api/admin/appointments?${params.toString()}`);
+      if (!res.ok) throw new Error("Error");
       const data = await res.json();
-      console.log("📋 Citas cargadas:", data.appointments?.length || 0);
       setAppointments(data.appointments || []);
+      setTotal(data.pagination?.total ?? 0);
+      setTotalPages(data.pagination?.totalPages ?? 1);
     } catch (error) {
-      console.error("❌ Error cargando citas:", error);
-      toast.error("❌ Error al cargar las citas");
-    } finally {
-      setLoading(false);
+      console.error(error);
+      toast.error("Error al cargar las citas");
     }
-  };
+  }, [filterStatus, filterBarber, filterDate, search, page, pageSize]);
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/stats");
       if (res.ok) {
@@ -147,924 +83,560 @@ export default function AdminDashboard() {
         setStats(data);
       }
     } catch (error) {
-      console.error("Error cargando estadísticas:", error);
+      console.error(error);
     }
-  };
+  }, []);
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case "pendiente":
-        return "Pendiente";
-      case "confirmada":
-        return "Confirmada";
-      case "completada":
-        return "Completada";
-      case "cancelada":
-        return "Cancelada";
-      default:
-        return status;
+  const fetchBarbers = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/barbers");
+      if (res.ok) {
+        const data = await res.json();
+        setBarbers(data.barbers || []);
+      }
+    } catch (error) {
+      console.error(error);
     }
-  };
+  }, []);
 
-  const updateAppointmentStatus = (id: number, status: string) => {
-    setPendingAction({ id, status });
-    setShowConfirmModal(true);
-  };
+  useEffect(() => {
+    if (mounted.current) return;
+    mounted.current = true;
+    fetchUserData();
+    fetchStats();
+    fetchBarbers();
+  }, [fetchUserData, fetchStats, fetchBarbers]);
 
-  const confirmUpdateStatus = async () => {
-    if (!pendingAction) return;
+  // Reiniciar página al cambiar filtros
+  useEffect(() => {
+    setPage(1);
+  }, [filterStatus, filterBarber, filterDate, search, pageSize]);
 
-    const { id, status } = pendingAction;
+  // Cargar citas con debounce (buscar al escribir)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      fetchAppointments();
+    }, 250);
+    return () => clearTimeout(t);
+  }, [fetchAppointments]);
 
+  const refresh = useCallback(() => {
+    fetchAppointments();
+    fetchStats();
+    fetchBarbers();
+  }, [fetchAppointments, fetchStats, fetchBarbers]);
+
+  const updateStatus = async (id: number, status: string) => {
+    if (!confirmAction) return;
     try {
       const res = await fetch("/api/admin/appointments", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, status })
       });
-
       if (res.ok) {
-        setAppointments((prev) =>
-          prev.map((apt) => (apt.id === id ? { ...apt, status } : apt))
-        );
-        fetchStats();
-        toast.success(`✅ Cita ${getStatusText(status)} exitosamente`);
+        refresh();
+        toast.success(`Cita marcada como ${STATUS_META[status]?.label || status}`);
       } else {
-        toast.error("❌ Error al actualizar la cita");
+        toast.error("Error al actualizar la cita");
       }
     } catch (error) {
-      console.error("Error actualizando cita:", error);
-      toast.error("❌ Error al actualizar la cita");
+      console.error(error);
+      toast.error("Error al actualizar la cita");
     } finally {
-      setShowConfirmModal(false);
-      setPendingAction(null);
+      setConfirmAction(null);
     }
-  };
-
-  const confirmDeleteAppointment = (id: number) => {
-    setPendingDeleteId(id);
-    setShowDeleteModal(true);
-  };
-
-  const closeDeleteModal = () => {
-    setShowDeleteModal(false);
-    setPendingDeleteId(null);
   };
 
   const deleteAppointment = async (id: number) => {
     try {
-      const res = await fetch(`/api/admin/appointments?id=${id}`, {
-        method: "DELETE"
-      });
-
+      const res = await fetch(`/api/admin/appointments?id=${id}`, { method: "DELETE" });
       if (res.ok) {
-        setAppointments((prev) => prev.filter((apt) => apt.id !== id));
-        fetchStats();
-        toast.success("🗑️ Cita eliminada exitosamente");
+        refresh();
+        toast.success("Cita eliminada");
       } else {
-        toast.error("❌ Error al eliminar la cita");
+        toast.error("Error al eliminar la cita");
       }
     } catch (error) {
-      console.error("Error eliminando cita:", error);
-      toast.error("❌ Error al eliminar la cita");
-    }
-  };
-
-  const formatDateForApi = (date: Date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  };
-
-  const getTimeSlots = () => {
-    if (!selectedDate) return HORARIOS_NORMALES;
-    return selectedDate.getDay() === 0
-      ? HORARIOS_DOMINGO
-      : HORARIOS_NORMALES;
-  };
-
-  const openNewAppointmentModal = async () => {
-    setShowNewModal(true);
-    try {
-      const [clientsRes, servicesRes] = await Promise.all([
-        fetch("/api/admin/users"),
-        fetch("/api/services")
-      ]);
-      if (clientsRes.ok) {
-        const data = await clientsRes.json();
-        setClients(
-          (data.users || []).filter((u: User) => u.role === "cliente")
-        );
-      }
-      if (servicesRes.ok) {
-        const data = await servicesRes.json();
-        setServices(data.services || []);
-      }
-    } catch (error) {
-      console.error("Error cargando datos para nueva cita:", error);
-    }
-  };
-
-  const closeNewAppointmentModal = () => {
-    setShowNewModal(false);
-    setSelectedUserId("");
-    setNewClientMode(false);
-    setClientName("");
-    setClientPhone("");
-    setSelectedServiceId("");
-    setSelectedDate(null);
-    setSelectedTime("");
-    setNewNotes("");
-  };
-
-  const submitNewAppointment = async () => {
-    if (newClientMode) {
-      if (!clientName.trim() || !clientPhone.trim()) {
-        toast.warning("⚠️ Ingresa nombre y teléfono del cliente");
-        return;
-      }
-    } else if (!selectedUserId) {
-      toast.warning("⚠️ Selecciona un cliente");
-      return;
-    }
-
-    if (!selectedServiceId) {
-      toast.warning("⚠️ Selecciona un servicio");
-      return;
-    }
-
-    if (!selectedDate) {
-      toast.warning("⚠️ Selecciona una fecha");
-      return;
-    }
-
-    if (!selectedTime) {
-      toast.warning("⚠️ Selecciona una hora");
-      return;
-    }
-
-    setSubmitting(true);
-
-    try {
-      const body: {
-        serviceId: number;
-        date: string;
-        time: string;
-        notes?: string;
-        userId?: number;
-        client?: { name: string; phone: string };
-      } = {
-        serviceId: Number(selectedServiceId),
-        date: formatDateForApi(selectedDate),
-        time: selectedTime,
-        notes: newNotes || undefined
-      };
-
-      if (newClientMode) {
-        body.client = {
-          name: clientName.trim(),
-          phone: clientPhone.trim()
-        };
-      } else {
-        body.userId = Number(selectedUserId);
-      }
-
-      const res = await fetch("/api/admin/appointments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        toast.success(`✅ Cita creada — Código: ${data.confirmationCode}`);
-        closeNewAppointmentModal();
-        fetchAppointments();
-        fetchStats();
-      } else {
-        toast.error(`❌ ${data.error || "Error al crear la cita"}`);
-      }
-    } catch (error) {
-      console.error("Error creando cita:", error);
-      toast.error("❌ Error al crear la cita");
+      console.error(error);
+      toast.error("Error al eliminar la cita");
     } finally {
-      setSubmitting(false);
+      setDeleteTarget(null);
     }
   };
 
-  const getSortedAppointments = (citas: Appointment[]) => {
-    const citasCopy = [...citas];
-
-    switch (sortOrder) {
-      case "fecha-reciente":
-        return citasCopy.sort((a, b) => {
-          const fechaA = new Date(`${a.date}T${a.time}`);
-          const fechaB = new Date(`${b.date}T${b.time}`);
-          return fechaB.getTime() - fechaA.getTime();
-        });
-
-      case "fecha-lejana":
-        return citasCopy.sort((a, b) => {
-          const fechaA = new Date(`${a.date}T${a.time}`);
-          const fechaB = new Date(`${b.date}T${b.time}`);
-          return fechaA.getTime() - fechaB.getTime();
-        });
-
-      case "hora-proxima":
-        return citasCopy.sort((a, b) => {
-          const fechaA = new Date(`${a.date}T${a.time}`);
-          const fechaB = new Date(`${b.date}T${b.time}`);
-          return fechaA.getTime() - fechaB.getTime();
-        });
-
-      default:
-        return citasCopy;
-    }
+  const whatsAppLink = (a: Appointment): string | null => {
+    const msg = appointmentConfirmationMessage({
+      clientName: a.client_name || "",
+      serviceName: a.service_name,
+      barberName: a.barber_name || "",
+      date: formatDateShort(a.date),
+      time: a.time,
+      code: a.confirmation_code || ""
+    });
+    return buildWhatsAppLink(a.client_phone || "", msg);
   };
 
-  const filteredAppointments =
-    filterStatus === "todas"
-      ? appointments
-      : appointments.filter((apt) => apt.status === filterStatus);
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "pendiente":
-        return "bg-yellow-500 text-white font-semibold shadow-sm";
-      case "confirmada":
-        return "bg-green-600 text-white font-semibold shadow-sm";
-      case "cancelada":
-        return "bg-red-600 text-white font-semibold shadow-sm";
-      case "completada":
-        return "bg-blue-600 text-white font-semibold shadow-sm";
-      default:
-        return "bg-gray-500 text-white font-semibold shadow-sm";
-    }
-  };
-
-  // Modal de confirmación
-  const statusText = pendingAction
-    ? getStatusText(pendingAction.status)
-    : "";
-
-  const newAppointmentModal = showNewModal ? (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center animate-in fade-in duration-200">
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-lg w-full mx-4 overflow-hidden animate-in zoom-in duration-200">
-          <div className="p-4 bg-blue-50 dark:bg-blue-900/20">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">📅</span>
-              <h3 className="text-lg font-bold text-gray-800 dark:text-white">
-                Nueva Cita
-              </h3>
-            </div>
-          </div>
-
-          <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Cliente
-              </label>
-              <select
-                value={newClientMode ? "NUEVO_CLIENTE" : selectedUserId}
-                onChange={(e) => {
-                  if (e.target.value === "NUEVO_CLIENTE") {
-                    setNewClientMode(true);
-                    setSelectedUserId("");
-                  } else {
-                    setNewClientMode(false);
-                    setSelectedUserId(e.target.value);
-                  }
-                }}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-              >
-                <option value="">Selecciona un cliente...</option>
-                <option value="NUEVO_CLIENTE">
-                  ➕ Nuevo cliente (mostrador)
-                </option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.email})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {newClientMode && (
-              <>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Nombre del cliente
-                  </label>
-                  <input
-                    type="text"
-                    value={clientName}
-                    onChange={(e) =>
-                      setClientName(
-                        e.target.value.replace(
-                          /[^A-Za-zÁáÉéÍíÓóÚúÑñ\s]/g,
-                          ""
-                        )
-                      )
-                    }
-                    placeholder="Nombre completo"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Teléfono
-                  </label>
-                  <input
-                    type="tel"
-                    inputMode="numeric"
-                    value={clientPhone}
-                    onChange={(e) =>
-                      setClientPhone(
-                        e.target.value.replace(/\D/g, "").slice(0, 10)
-                      )
-                    }
-                    placeholder="3001234567"
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-                  />
-                </div>
-              </>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Servicio
-              </label>
-              <select
-                value={selectedServiceId}
-                onChange={(e) => setSelectedServiceId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-              >
-                <option value="">Selecciona un servicio...</option>
-                {services.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} — ${s.price.toLocaleString()}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Fecha
-                </label>
-                <DatePicker
-                  selected={selectedDate}
-                  onChange={(date: Date | null) => {
-                    setSelectedDate(date);
-                    setSelectedTime("");
-                  }}
-                  minDate={new Date()}
-                  dateFormat="dd/MM/yyyy"
-                  placeholderText="Selecciona fecha"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Hora
-                </label>
-                <select
-                  value={selectedTime}
-                  onChange={(e) => setSelectedTime(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-                >
-                  <option value="">Selecciona hora...</option>
-                  {getTimeSlots().map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Notas (opcional)
-              </label>
-              <textarea
-                value={newNotes}
-                onChange={(e) => setNewNotes(e.target.value)}
-                rows={2}
-                placeholder="Ej: corte con máquina, cliente frecuente..."
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-              />
-            </div>
-          </div>
-
-          <div className="flex gap-3 p-4 border-t border-gray-200 dark:border-gray-700">
-            <button
-              onClick={closeNewAppointmentModal}
-              disabled={submitting}
-              className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={submitNewAppointment}
-              disabled={submitting}
-              className="flex-1 px-4 py-2 rounded-lg text-white font-medium bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50"
-            >
-              {submitting ? "Creando..." : "Crear Cita"}
-            </button>
-          </div>
-        </div>
-      </div>
-    ) : null;
-
-  if (loading) {
+  const statusSelect = (a: Appointment) => {
+    const meta = STATUS_META[a.status];
     return (
-      <div>
-        <Navbar userName={user?.name} userRole={user?.role} />
-        <div className="flex items-center justify-center h-64">
-          <div className="text-gray-500">Cargando datos...</div>
-        </div>
-      </div>
+      <select
+        value={a.status}
+        onChange={(e) => setConfirmAction({ id: a.id, status: e.target.value })}
+        className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg border cursor-pointer focus:outline-none ${meta.cls}`}
+      >
+        {Object.entries(STATUS_META).map(([key, m]) => (
+          <option key={key} value={key} className="bg-stone-900 text-stone-200">
+            {m.label}
+          </option>
+        ))}
+      </select>
     );
-  }
+  };
+
+  const today = toISODate(new Date());
+  const todayCount = stats?.todayAppointments ?? appointments.filter((a) => a.date === today && a.status !== "cancelada").length;
+
+  const summaryCards = [
+    { label: "Citas de Hoy", value: todayCount, sub: "no canceladas", accent: "text-amber-400" },
+    { label: "Pendientes", value: stats?.pendingAppointments ?? 0, sub: "por confirmar", accent: "text-amber-400" },
+    { label: "Completadas", value: stats?.completedAppointments ?? 0, sub: "total histórico", accent: "text-emerald-400" },
+    { label: "Ingresos", value: formatCurrency(stats?.totalRevenue ?? 0), sub: "citas completadas", accent: "text-emerald-400" }
+  ];
 
   return (
-    <div>
-      <Navbar userName={user?.name} userRole={user?.role} />
+    <div className="min-h-screen">
+      <Sidebar userName={user?.name} userRole={user?.role} />
 
-      <div className="p-8">
-        <h1 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">
-          🔐 Panel de Administración
-        </h1>
-        <p className="text-gray-600 dark:text-gray-300 mb-8">
-          Gestiona todas las citas y visualiza el rendimiento del negocio
-        </p>
-
-        {/* Tabs */}
-        <div className="border-b border-gray-200 dark:border-gray-700 mb-6">
-          <nav className="flex space-x-4">
-            <button
-              onClick={() => setActiveTab("citas")}
-              className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${
-                activeTab === "citas"
-                  ? "border-blue-500 text-blue-600 dark:text-blue-400"
-                  : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400"
-              }`}
-            >
-              📋 Gestión de Citas
-            </button>
-            <button
-              onClick={() => setActiveTab("estadisticas")}
-              className={`py-2 px-4 font-medium text-sm border-b-2 transition-colors ${
-                activeTab === "estadisticas"
-                  ? "border-blue-500 text-blue-600 dark:text-blue-400"
-                  : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400"
-              }`}
-            >
-              📊 Estadísticas
-            </button>
-          </nav>
-        </div>
-
-        {/* Contenido de Tabs */}
-        {activeTab === "citas" ? (
-          <div>
-            {/* Cards de resumen rápido */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-              <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
-                <h3 className="text-sm text-gray-500 dark:text-gray-400">
-                  Total Citas
-                </h3>
-                <p className="text-2xl font-bold text-gray-800 dark:text-white">
-                  {appointments.length}
-                </p>
-              </div>
-              <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg shadow">
-                <h3 className="text-sm text-yellow-700 dark:text-yellow-400">
-                  Pendientes
-                </h3>
-                <p className="text-2xl font-bold text-yellow-800 dark:text-yellow-300">
-                  {appointments.filter((a) => a.status === "pendiente").length}
-                </p>
-              </div>
-              <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg shadow">
-                <h3 className="text-sm text-green-700 dark:text-green-400">
-                  Completadas
-                </h3>
-                <p className="text-2xl font-bold text-green-800 dark:text-green-300">
-                  {appointments.filter((a) => a.status === "completada").length}
-                </p>
-              </div>
-              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg shadow">
-                <h3 className="text-sm text-blue-700 dark:text-blue-400">
-                  Ingresos Totales
-                </h3>
-                <p className="text-2xl font-bold text-blue-800 dark:text-blue-300">
-                  ${stats?.totalRevenue?.toLocaleString() || 0}
-                </p>
-              </div>
+      <main className="md:pl-60">
+        <div className="p-4 md:p-8 max-w-7xl mx-auto">
+          {/* Header */}
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold text-stone-50">Panel de Administración</h1>
+              <p className="text-stone-500 mt-1 text-sm">Gestión de citas, peluqueros y rendimiento del negocio</p>
             </div>
+            <button onClick={() => setShowNewModal(true)} className="btn btn-primary">
+              📅 Nueva Cita
+            </button>
+          </div>
 
-            {/* Filtros */}
-            <div className="mb-4 flex flex-wrap gap-3 justify-between items-center">
-              <div className="flex flex-wrap gap-2">
-                <select
-                  value={filterStatus}
-                  onChange={(e) => setFilterStatus(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-                >
-                  <option value="todas">Todas las citas</option>
-                  <option value="pendiente">Pendientes</option>
-                  <option value="confirmada">Confirmadas</option>
-                  <option value="completada">Completadas</option>
-                  <option value="cancelada">Canceladas</option>
-                </select>
+          {/* Tabs */}
+          <div className="flex gap-1 border-b border-stone-800 mb-6">
+            {([
+              ["citas", "📋 Citas"],
+              ["estadisticas", "📊 Estadísticas"]
+            ] as const).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setActiveTab(key)}
+                className={`px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${
+                  activeTab === key
+                    ? "border-amber-500 text-amber-400"
+                    : "border-transparent text-stone-400 hover:text-stone-200"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
-                <button
-                  onClick={() => setSortOrder("hora-proxima")}
-                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    sortOrder === "hora-proxima"
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
-                  }`}
-                >
-                  ⏰ Más Próximas
-                </button>
-                <button
-                  onClick={() => setSortOrder("fecha-reciente")}
-                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    sortOrder === "fecha-reciente"
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
-                  }`}
-                >
-                  📅 Más Recientes
-                </button>
-                <button
-                  onClick={() => setSortOrder("fecha-lejana")}
-                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    sortOrder === "fecha-lejana"
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
-                  }`}
-                >
-                  📆 Más Lejanas
-                </button>
+          {activeTab === "citas" ? (
+            <>
+              {/* Cards resumen */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                {summaryCards.map((c) => (
+                  <div key={c.label} className="stat-card">
+                    <p className="stat-label">{c.label}</p>
+                    <p className={`stat-value ${c.accent}`}>{c.value}</p>
+                    <p className="text-xs text-stone-500 mt-1">{c.sub}</p>
+                  </div>
+                ))}
               </div>
 
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={openNewAppointmentModal}
-                  className="px-4 py-2 rounded-md text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors"
-                >
-                  📅 Nueva Cita
-                </button>
-                <button
-                  onClick={() => {
-                    fetchAppointments();
-                    fetchStats();
-                  }}
-                  className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
-                >
-                  🔄 Actualizar
-                </button>
+              {/* Filtros */}
+              <div className="card p-4 mb-6">
+                <div className="flex flex-wrap gap-3 items-end">
+                  <div className="flex-1 min-w-40">
+                    <label className="label">Buscar</label>
+                    <input
+                      type="text"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Cliente, teléfono, servicio, código..."
+                      className="input"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Estado</label>
+                    <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="input">
+                      <option value="todas">Todas</option>
+                      {Object.entries(STATUS_META).map(([k, m]) => (
+                        <option key={k} value={k}>{m.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Peluquero</label>
+                    <select value={filterBarber} onChange={(e) => setFilterBarber(e.target.value)} className="input">
+                      <option value="todas">Todos</option>
+                      {barbers.map((b) => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Fecha</label>
+                    <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="input" />
+                  </div>
+                  <button onClick={refresh} className="btn btn-ghost">🔄 Actualizar</button>
+                </div>
               </div>
-            </div>
 
-            {/* Tabla de Citas */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50 dark:bg-gray-700">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Cliente
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Servicio
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Código
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Fecha/Hora
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Precio
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Estado
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Acciones
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                    {getSortedAppointments(filteredAppointments).length > 0 ? (
-                      getSortedAppointments(filteredAppointments).map((apt) => (
-                        <tr
-                          key={apt.id}
-                          className="hover:bg-gray-50 dark:hover:bg-gray-700/50"
-                        >
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-medium text-gray-900 dark:text-white">
-                              {apt.client_name}
-                            </div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">
-                              {apt.client_email}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
-                            {apt.service_name}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            {apt.confirmation_code ? (
-                              <div className="text-sm font-mono font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded inline-block">
-                                {apt.confirmation_code}
-                              </div>
-                            ) : (
-                              <span className="text-xs text-gray-400">
-                                Sin código
+              {/* Tabla */}
+              <div className="card overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[900px]">
+                    <thead className="bg-stone-800/60">
+                      <tr>
+                        <th className="table-header">Cliente</th>
+                        <th className="table-header">Servicio</th>
+                        <th className="table-header">Peluquero</th>
+                        <th className="table-header">Código</th>
+                        <th className="table-header">Fecha/Hora</th>
+                        <th className="table-header">Precio</th>
+                        <th className="table-header">Estado</th>
+                        <th className="table-header">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-800">
+                      {appointments.length > 0 ? (
+                        appointments.map((a) => (
+                          <tr key={a.id} className="hover:bg-stone-800/40 transition-colors">
+                            <td className="table-cell">
+                              <div className="text-sm font-medium text-stone-100">{a.client_name}</div>
+                              <div className="text-xs text-stone-500">{a.client_phone || a.confirmation_code}</div>
+                            </td>
+                            <td className="table-cell text-sm text-stone-300">{a.service_name}</td>
+                            <td className="table-cell">
+                              {a.barber_name ? (
+                                <span className="inline-flex items-center gap-2 text-sm text-stone-200">
+                                  <span
+                                    className="w-2.5 h-2.5 rounded-full inline-block"
+                                    style={{ backgroundColor: a.barber_color || "#f59e0b" }}
+                                  />
+                                  {a.barber_name}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-stone-500">Sin asignar</span>
+                              )}
+                            </td>
+                            <td className="table-cell">
+                              <span className="font-mono text-xs font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded">
+                                {a.confirmation_code || "—"}
                               </span>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-900 dark:text-white">
-                              {new Date(
-                                apt.date + "T00:00:00"
-                              ).toLocaleDateString("es-ES")}
-                            </div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">
-                              {apt.time}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">
-                            ${apt.service_price?.toLocaleString() || 0}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <select
-                              value={apt.status}
-                              onChange={(e) =>
-                                updateAppointmentStatus(apt.id, e.target.value)
-                              }
-                              className={`
-                                text-xs font-medium px-3 py-1.5 rounded-lg border-2 cursor-pointer transition-all
-                                focus:outline-none focus:ring-2 focus:ring-offset-2
-                                ${apt.status === "pendiente" ? "bg-yellow-100 text-yellow-800 border-yellow-300 focus:ring-yellow-500" : ""}
-                                ${apt.status === "confirmada" ? "bg-green-100 text-green-800 border-green-300 focus:ring-green-500" : ""}
-                                ${apt.status === "completada" ? "bg-blue-100 text-blue-800 border-blue-300 focus:ring-blue-500" : ""}
-                                ${apt.status === "cancelada" ? "bg-red-100 text-red-800 border-red-300 focus:ring-red-500" : ""}
-                              `}
-                            >
-                              <option value="pendiente">📋 Pendiente</option>
-                              <option value="confirmada">✅ Confirmar</option>
-                              <option value="completada">✨ Completar</option>
-                              <option value="cancelada">❌ Cancelar</option>
-                            </select>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            <button
-                              onClick={() => confirmDeleteAppointment(apt.id)}
-                              className="text-red-600 hover:text-red-700 text-sm"
-                              title="Eliminar cita"
-                            >
-                              🗑️ Eliminar
-                            </button>
+                            </td>
+                            <td className="table-cell">
+                              <div className="text-sm text-stone-200">{formatDateShort(a.date)}</div>
+                              <div className="text-xs text-stone-500">{a.time}</div>
+                            </td>
+                            <td className="table-cell text-sm text-emerald-400 font-medium">
+                              {formatCurrency(a.service_price)}
+                            </td>
+                            <td className="table-cell">{statusSelect(a)}</td>
+                            <td className="table-cell">
+                              <div className="flex items-center gap-2">
+                                {a.client_phone && (
+                                  <a
+                                    href={whatsAppLink(a) || "#"}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    title="Enviar WhatsApp"
+                                    className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500 hover:text-white transition-colors"
+                                  >
+                                    💬
+                                  </a>
+                                )}
+                                <button
+                                  onClick={() => setReassignTarget(a)}
+                                  title="Reasignar peluquero/fecha"
+                                  className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500 hover:text-stone-950 transition-colors"
+                                >
+                                  🔄
+                                </button>
+                                <button
+                                  onClick={() => setDeleteTarget(a)}
+                                  title="Eliminar"
+                                  className="p-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500 hover:text-white transition-colors"
+                                >
+                                  🗑️
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={8} className="px-4 py-10 text-center text-stone-500">
+                            No hay citas que coincidan con los filtros.
                           </td>
                         </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td
-                          colSpan={7}
-                          className="px-6 py-8 text-center text-gray-500 dark:text-gray-400"
-                        >
-                          {filterStatus === "todas"
-                            ? "No hay citas registradas. ¡Cuando los clientes agenden citas aparecerán aquí!"
-                            : `No hay citas con estado "${filterStatus}"`}
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div>
-            {/* Estadísticas - Versión simple sin gráficos */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                <h3 className="text-lg font-semibold mb-4 text-gray-800 dark:text-white">
-                  📅 Citas por Día de la Semana
-                </h3>
-                {stats?.appointmentsByDay &&
-                stats.appointmentsByDay.length > 0 ? (
-                  <div className="space-y-3">
-                    {stats.appointmentsByDay.map((day) => {
-                      const maxCount = Math.max(
-                        ...stats.appointmentsByDay.map((d) => d.count),
-                        1
-                      );
-                      return (
-                        <div key={day.day_num} className="flex items-center">
-                          <span className="w-24 text-sm text-gray-600 dark:text-gray-400">
-                            {day.day_name}
-                          </span>
-                          <div className="flex-1 mx-3">
-                            <div className="h-6 bg-blue-200 dark:bg-blue-900 rounded">
-                              <div
-                                className="h-6 bg-blue-600 rounded"
-                                style={{
-                                  width: `${(day.count / maxCount) * 100}%`
-                                }}
-                              />
-                            </div>
-                          </div>
-                          <span className="text-sm font-medium text-gray-800 dark:text-white">
-                            {day.count}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-gray-500 text-center py-4">
-                    No hay datos suficientes
-                  </p>
-                )}
-              </div>
-
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                <h3 className="text-lg font-semibold mb-4 text-gray-800 dark:text-white">
-                  🔥 Servicios Más Populares
-                </h3>
-                {stats?.popularServices && stats.popularServices.length > 0 ? (
-                  <div className="space-y-3">
-                    {stats.popularServices.map((service, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center justify-between"
-                        >
-                          <div>
-                            <p className="text-sm font-medium text-gray-800 dark:text-white">
-                              {service.name}
-                            </p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
-                              {service.count} citas
-                            </p>
-                          </div>
-                          <p className="text-sm font-semibold text-green-600 dark:text-green-400">
-                            ${service.revenue?.toLocaleString() || 0}
-                          </p>
-                        </div>
-                      )
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-gray-500 text-center py-4">
-                    No hay datos suficientes
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-6 bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-              <h3 className="text-lg font-semibold mb-4 text-gray-800 dark:text-white">
-                💰 Ingresos Últimos 7 Días
-              </h3>
-              {stats?.revenueByDay && stats.revenueByDay.length > 0 ? (
-                <div className="grid grid-cols-7 gap-2">
-                  {stats.revenueByDay.map((day) => (
-                    <div key={day.date} className="text-center">
-                      <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
-                        {new Date(day.date + "T00:00:00").toLocaleDateString(
-                          "es-ES",
-                          { weekday: "short" }
-                        )}
-                      </div>
-                      <div className="text-sm font-medium text-gray-800 dark:text-white">
-                        ${day.total?.toLocaleString() || 0}
-                      </div>
-                    </div>
-                  ))}
+                      )}
+                    </tbody>
+                  </table>
                 </div>
-              ) : (
-                <p className="text-gray-500 text-center py-4">
-                  No hay ingresos registrados en los últimos 7 días
-                </p>
-              )}
+
+                {/* Paginación */}
+                <div className="flex flex-wrap items-center justify-between gap-3 p-4 border-t border-stone-800">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm text-stone-500">
+                      {total > 0 ? `Mostrando ${appointments.length} de ${total} citas` : "Sin resultados"}
+                    </p>
+                    <select
+                      value={pageSize}
+                      onChange={(e) => setPageSize(Number(e.target.value))}
+                      className="input !w-auto !py-1.5 text-sm"
+                      title="Citas por página"
+                    >
+                      {[15, 25, 50, 100].map((n) => (
+                        <option key={n} value={n}>{n} / pág.</option>
+                      ))}
+                    </select>
+                  </div>
+                  {totalPages > 1 && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                        disabled={page <= 1}
+                        className="btn btn-ghost !px-3 !py-1.5 text-sm"
+                      >
+                        ← Anterior
+                      </button>
+                      <span className="text-sm text-stone-400">
+                        Página {page} de {totalPages}
+                      </span>
+                      <button
+                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                        disabled={page >= totalPages}
+                        className="btn btn-ghost !px-3 !py-1.5 text-sm"
+                      >
+                        Siguiente →
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : (
+            <StatsSection stats={stats} barbers={barbers} />
+          )}
+        </div>
+      </main>
+
+      <NewAppointmentModal open={showNewModal} onClose={() => setShowNewModal(false)} onCreated={refresh} />
+      <ReassignModal open={!!reassignTarget} appointment={reassignTarget} onClose={() => setReassignTarget(null)} onReassigned={refresh} />
+
+      {/* Confirmar cambio de estado */}
+      {confirmAction && (
+        <div className="modal-overlay" onClick={() => setConfirmAction(null)}>
+          <div className="modal-card max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="p-5 border-b border-stone-800">
+              <h3 className="text-lg font-bold text-stone-50">Confirmar acción</h3>
+            </div>
+            <div className="p-5">
+              <p className="text-stone-300">
+                ¿Marcar la cita como{" "}
+                <span className="font-bold text-amber-400">{STATUS_META[confirmAction.status]?.label}</span>?
+              </p>
+            </div>
+            <div className="flex gap-3 p-5 border-t border-stone-800">
+              <button onClick={() => setConfirmAction(null)} className="btn btn-ghost flex-1">Cancelar</button>
+              <button onClick={() => updateStatus(confirmAction.id, confirmAction.status)} className="btn btn-primary flex-1">
+                Sí, continuar
+              </button>
             </div>
           </div>
-        )}
+        </div>
+      )}
+
+      {/* Confirmar eliminación */}
+      {deleteTarget && (
+        <div className="modal-overlay" onClick={() => setDeleteTarget(null)}>
+          <div className="modal-card max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="p-5 border-b border-stone-800">
+              <h3 className="text-lg font-bold text-red-400">Eliminar cita</h3>
+            </div>
+            <div className="p-5">
+              <p className="text-stone-300">
+                ¿Eliminar la cita de <strong className="text-stone-100">{deleteTarget.client_name}</strong> el{" "}
+                {formatDateShort(deleteTarget.date)} a las {deleteTarget.time}?
+              </p>
+              <p className="text-xs text-stone-500 mt-2">Esta acción no se puede deshacer.</p>
+            </div>
+            <div className="flex gap-3 p-5 border-t border-stone-800">
+              <button onClick={() => setDeleteTarget(null)} className="btn btn-ghost flex-1">Cancelar</button>
+              <button onClick={() => deleteAppointment(deleteTarget.id)} className="btn btn-danger flex-1">Eliminar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatsSection({ stats, barbers }: { stats: Stats | null; barbers: Barber[] }) {
+  const [barberFilter, setBarberFilter] = useState("todas");
+  const [localStats, setLocalStats] = useState<Stats | null>(stats);
+
+  useEffect(() => {
+    setLocalStats(stats);
+  }, [stats]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchFiltered = async () => {
+      try {
+        const res = await fetch(`/api/admin/stats${barberFilter !== "todas" ? `?barberId=${barberFilter}` : ""}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) setLocalStats(data);
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    };
+    fetchFiltered();
+    return () => {
+      cancelled = true;
+    };
+  }, [barberFilter]);
+
+  if (!localStats) {
+    return <p className="text-stone-500 text-center py-10">Cargando estadísticas...</p>;
+  }
+
+  const maxDay = Math.max(...(localStats.appointmentsByDay || []).map((d) => d.count), 1);
+  const maxRev = Math.max(...(localStats.revenueByDay || []).map((d) => d.total || 0), 1);
+
+  const cards = [
+    { label: "Citas totales", value: localStats.totalAppointments, accent: "text-stone-50" },
+    { label: "Pendientes", value: localStats.pendingAppointments, accent: "text-amber-400" },
+    { label: "Completadas", value: localStats.completedAppointments, accent: "text-emerald-400" },
+    { label: "Canceladas", value: localStats.cancelledAppointments, accent: "text-red-400" }
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold text-stone-100">Rendimiento del negocio</h2>
+        <select value={barberFilter} onChange={(e) => setBarberFilter(e.target.value)} className="input w-auto">
+          <option value="todas">Todos los peluqueros</option>
+          {barbers.map((b) => (
+            <option key={b.id} value={b.id}>{b.name}</option>
+          ))}
+        </select>
       </div>
 
-      {showConfirmModal && pendingAction && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden animate-in zoom-in duration-200">
-            <div
-              className={`p-4 ${pendingAction.status === "cancelada" ? "bg-red-50 dark:bg-red-900/20" : "bg-blue-50 dark:bg-blue-900/20"}`}
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">
-                  {pendingAction.status === "cancelada" ? "⚠️" : "✂️"}
-                </span>
-                <h3 className="text-lg font-bold text-gray-800 dark:text-white">
-                  Confirmar acción
-                </h3>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {cards.map((c) => (
+          <div key={c.label} className="stat-card">
+            <p className="stat-label">{c.label}</p>
+            <p className={`stat-value ${c.accent}`}>{c.value}</p>
+          </div>
+        ))}
+        <div className="stat-card col-span-2 md:col-span-4">
+          <p className="stat-label">Ingresos totales</p>
+          <p className="stat-value text-emerald-400">{formatCurrency(localStats.totalRevenue)}</p>
+        </div>
+      </div>
+
+      {/* Por peluquero */}
+      {localStats.perBarber.length > 0 && (
+        <div className="card p-5">
+          <h3 className="text-base font-semibold text-stone-100 mb-4">💈 Rendimiento por peluquero</h3>
+          <div className="space-y-3">
+            {localStats.perBarber.map((b) => (
+              <div key={b.id} className="flex items-center gap-4">
+                <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: b.color }} />
+                <span className="w-40 truncate text-sm text-stone-200">{b.name}</span>
+                <div className="flex-1 h-6 bg-stone-800 rounded overflow-hidden">
+                  <div
+                    className="h-full rounded"
+                    style={{ width: `${Math.min((b.revenue / Math.max(localStats.totalRevenue, 1)) * 100, 100)}%`, backgroundColor: b.color }}
+                  />
+                </div>
+                <span className="text-sm text-stone-300 w-10 text-right">{b.total}</span>
+                <span className="text-sm text-emerald-400 font-medium w-24 text-right">{formatCurrency(b.revenue)}</span>
               </div>
-            </div>
-
-            <div className="p-6">
-              <p className="text-gray-700 dark:text-gray-300 mb-4">
-                ¿Estás seguro de que deseas marcar esta cita como{" "}
-                <span
-                  className={`font-bold px-2 py-0.5 rounded ${getStatusColor(pendingAction.status)}`}
-                >
-                  {statusText}
-                </span>
-                ?
-              </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Esta acción no se puede deshacer.
-              </p>
-            </div>
-
-            <div className="flex gap-3 p-4 border-t border-gray-200 dark:border-gray-700">
-              <button
-                onClick={() => {
-                  setShowConfirmModal(false);
-                  setPendingAction(null);
-                }}
-                className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={confirmUpdateStatus}
-                className={`
-                  flex-1 px-4 py-2 rounded-lg text-white font-medium transition-colors
-                  ${
-                    pendingAction.status === "cancelada"
-                      ? "bg-red-600 hover:bg-red-700"
-                      : "bg-blue-600 hover:bg-blue-700"
-                  }
-                `}
-              >
-                Sí, {statusText}
-              </button>
-            </div>
+            ))}
           </div>
         </div>
       )}
 
-      {newAppointmentModal}
-
-      {showDeleteModal && pendingDeleteId && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden animate-in zoom-in duration-200">
-            <div className="p-4 bg-red-50 dark:bg-red-900/20">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">🗑️</span>
-                <h3 className="text-lg font-bold text-gray-800 dark:text-white">
-                  Eliminar cita
-                </h3>
-              </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Citas por día */}
+        <div className="card p-5">
+          <h3 className="text-base font-semibold text-stone-100 mb-4">📅 Citas por día de la semana</h3>
+          {localStats.appointmentsByDay.length > 0 ? (
+            <div className="space-y-3">
+              {localStats.appointmentsByDay.map((d) => (
+                <div key={d.day_num} className="flex items-center gap-3">
+                  <span className="w-24 text-sm text-stone-400">{d.day_name}</span>
+                  <div className="flex-1 h-6 bg-stone-800 rounded overflow-hidden">
+                    <div className="h-full bg-amber-500 rounded" style={{ width: `${(d.count / maxDay) * 100}%` }} />
+                  </div>
+                  <span className="text-sm font-medium text-stone-200 w-8 text-right">{d.count}</span>
+                </div>
+              ))}
             </div>
-
-            <div className="p-6">
-              <p className="text-gray-700 dark:text-gray-300 mb-4">
-                ¿Estás seguro de que deseas eliminar esta cita?
-              </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Esta acción no se puede deshacer.
-              </p>
-            </div>
-
-            <div className="flex gap-3 p-4 border-t border-gray-200 dark:border-gray-700">
-              <button
-                onClick={closeDeleteModal}
-                className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={() => {
-                  closeDeleteModal();
-                  deleteAppointment(pendingDeleteId);
-                }}
-                className="flex-1 px-4 py-2 rounded-lg text-white font-medium bg-red-600 hover:bg-red-700 transition-colors"
-              >
-                Sí, eliminar
-              </button>
-            </div>
-          </div>
+          ) : (
+            <p className="text-stone-500 text-center py-6 text-sm">Sin datos suficientes</p>
+          )}
         </div>
-      )}
+
+        {/* Servicios populares */}
+        <div className="card p-5">
+          <h3 className="text-base font-semibold text-stone-100 mb-4">🔥 Servicios más populares</h3>
+          {localStats.popularServices.length > 0 ? (
+            <div className="space-y-3">
+              {localStats.popularServices.map((s, i) => (
+                <div key={i} className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-stone-200">{s.name}</p>
+                    <p className="text-xs text-stone-500">{s.count} cita(s)</p>
+                  </div>
+                  <span className="text-sm font-semibold text-emerald-400">{formatCurrency(s.revenue)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-stone-500 text-center py-6 text-sm">Sin datos suficientes</p>
+          )}
+        </div>
+      </div>
+
+      {/* Ingresos últimos 7 días */}
+      <div className="card p-5">
+        <h3 className="text-base font-semibold text-stone-100 mb-4">💰 Ingresos últimos 7 días</h3>
+        {localStats.revenueByDay.length > 0 ? (
+          <div className="flex items-end gap-2 h-40">
+            {[...localStats.revenueByDay].reverse().map((d) => (
+              <div key={d.date} className="flex-1 flex flex-col items-center justify-end gap-1 h-full">
+                <span className="text-xs text-emerald-400 font-medium">
+                  {d.total ? formatCurrency(d.total) : ""}
+                </span>
+                <div
+                  className="w-full bg-gradient-to-t from-amber-600 to-amber-400 rounded-t-lg"
+                  style={{ height: `${Math.max(((d.total || 0) / maxRev) * 100, 2)}%` }}
+                />
+                <span className="text-[10px] text-stone-500">{formatDateShort(d.date)}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-stone-500 text-center py-6 text-sm">Sin ingresos en los últimos 7 días</p>
+        )}
+      </div>
     </div>
   );
 }

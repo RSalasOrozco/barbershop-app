@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import db from "@/lib/db";
 import bcrypt from "bcryptjs";
 import { signToken } from "@/lib/auth";
+import { isSecureRequest } from "@/lib/cookies";
 
 interface UserRow {
   id: number;
@@ -70,12 +71,12 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    // Establecer cookie segura
+    // Establecer cookie (Secure solo si va por HTTPS)
     response.cookies.set({
       name: "token",
       value: token,
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: isSecureRequest(request),
       sameSite: "lax",
       path: "/",
       maxAge: 7 * 24 * 60 * 60 // 7 días

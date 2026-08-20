@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { isSecureRequest } from "@/lib/cookies";
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   const response = NextResponse.json({ success: true });
 
   // Eliminar la cookie del token
@@ -8,7 +9,8 @@ export async function POST() {
     name: "token",
     value: "",
     httpOnly: true,
-    expires: new Date(0), // Fecha en el pasado = eliminar
+    secure: isSecureRequest(request),
+    expires: new Date(0),
     path: "/"
   });
 

@@ -1,32 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import Navbar from "@/components/Navbar";
-import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Sidebar from "@/components/Sidebar";
 import { toast } from "sonner";
-
-interface User {
-  id: number;
-  name: string;
-  email: string;
-  phone: string | null;
-  role: string;
-  created_at: string;
-  total_appointments: number;
-  total_spent: number;
-}
-
-interface SessionUser {
-  id: number;
-  name: string;
-  email: string;
-  role: "admin" | "cliente";
-}
+import type { SessionUser, User } from "@/lib/types";
+import { formatCurrency } from "@/lib/types";
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<SessionUser | null>(null);
+  const [loading, setLoading] = useState(true);
+
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -34,43 +18,30 @@ export default function AdminUsersPage() {
   const [deleteUser, setDeleteUser] = useState<User | null>(null);
   const [newPassword, setNewPassword] = useState("");
 
-  useEffect(() => {
-    fetchUserData();
-    fetchUsers();
-  }, []);
+  const mounted = useRef(false);
 
-  const fetchUserData = async () => {
+  const fetchAll = useCallback(async () => {
     try {
-      const res = await fetch("/api/auth/me");
-      if (res.ok) {
-        const data = await res.json();
-        setUser(data.user);
-      }
+      const [u, us] = await Promise.all([fetch("/api/auth/me"), fetch("/api/admin/users")]);
+      const ud = await u.json();
+      const usd = await us.json();
+      setUser(ud.user || null);
+      setUsers(usd.users || []);
     } catch (error) {
-      console.error("Error fetching user:", error);
-    }
-  };
-
-  const fetchUsers = async () => {
-    try {
-      const res = await fetch("/api/admin/users");
-      const data = await res.json();
-      setUsers(data.users || []);
-    } catch (error) {
-      console.error("Error cargando usuarios:", error);
+      console.error(error);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const handleEditUser = (user: User) => {
-    setEditingUser({ ...user });
-    setShowModal(true);
-  };
+  useEffect(() => {
+    if (mounted.current) return;
+    mounted.current = true;
+    fetchAll();
+  }, [fetchAll]);
 
   const handleUpdateUser = async () => {
     if (!editingUser) return;
-
     try {
       const res = await fetch("/api/admin/users", {
         method: "PUT",
@@ -83,423 +54,260 @@ export default function AdminUsersPage() {
           role: editingUser.role
         })
       });
-
       const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Error al actualizar");
-      }
-
+      if (!res.ok) throw new Error(data.error || "Error al actualizar");
       setShowModal(false);
-      fetchUsers();
-      toast.success("✅ Usuario actualizado correctamente");
+      fetchAll();
+      toast.success("Usuario actualizado");
     } catch (err) {
-      toast.error(
-        `❌ ${err instanceof Error ? err.message : "Error al actualizar"}`
-      );
-    }
-  };
-
-  const handleDeleteUser = async (userId: number, userName: string) => {
-    try {
-      const res = await fetch(`/api/admin/users?id=${userId}`, {
-        method: "DELETE"
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Error al eliminar");
-      }
-
-      fetchUsers();
-      toast.success(`✅ Usuario "${userName}" eliminado correctamente`);
-    } catch (err) {
-      toast.error(`❌ ${err instanceof Error ? err.message : "Error al eliminar"}`);
+      toast.error(err instanceof Error ? err.message : "Error al actualizar");
     }
   };
 
   const handleResetPassword = async () => {
     if (!selectedUser || !newPassword) return;
-
     if (newPassword.length < 6) {
-      toast.warning("⚠️ La contraseña debe tener al menos 6 caracteres");
+      toast.warning("La contraseña debe tener al menos 6 caracteres");
       return;
     }
-
     try {
       const res = await fetch("/api/admin/users/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: selectedUser.id,
-          newPassword
-        })
+        body: JSON.stringify({ userId: selectedUser.id, newPassword })
       });
-
       const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Error al resetear contraseña");
-      }
-
-      toast.success(
-        `✅ Contraseña de "${selectedUser.name}" actualizada correctamente`
-      );
+      if (!res.ok) throw new Error(data.error || "Error al resetear contraseña");
+      toast.success(`Contraseña de "${selectedUser.name}" actualizada`);
       setShowPasswordModal(false);
       setNewPassword("");
       setSelectedUser(null);
     } catch (err) {
-      toast.error(
-        `❌ ${
-          err instanceof Error ? err.message : "Error al resetear contraseña"
-        }`
-      );
+      toast.error(err instanceof Error ? err.message : "Error al resetear contraseña");
     }
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("es-ES", {
-      year: "numeric",
-      month: "long",
-      day: "numeric"
-    });
+  const handleDeleteUser = async (id: number, name: string) => {
+    try {
+      const res = await fetch(`/api/admin/users?id=${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al eliminar");
+      fetchAll();
+      toast.success(`Usuario "${name}" eliminado`);
+      setDeleteUser(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al eliminar");
+      setDeleteUser(null);
+    }
   };
 
-if (loading) {
+  const admins = users.filter((u) => u.role === "admin").length;
+  const activeClients = users.filter((u) => u.total_appointments > 0).length;
+
+  if (loading) {
     return (
-      <div>
-        <Navbar userName={user?.name} userRole={user?.role} />
-        <div className="flex items-center justify-center h-64">
-          <div className="text-gray-500">Cargando usuarios...</div>
-        </div>
+      <div className="min-h-screen">
+        <Sidebar userName={user?.name} userRole={user?.role} />
+        <main className="md:pl-60 p-8 text-stone-500">Cargando usuarios...</main>
       </div>
     );
   }
 
   return (
-    <div>
-      <Navbar userName={user?.name} userRole={user?.role} />
+    <div className="min-h-screen">
+      <Sidebar userName={user?.name} userRole={user?.role} />
+      <main className="md:pl-60">
+        <div className="p-4 md:p-8 max-w-6xl mx-auto">
+          <div className="mb-6">
+            <h1 className="text-2xl md:text-3xl font-bold text-stone-50">👥 Usuarios</h1>
+            <p className="text-stone-500 mt-1 text-sm">Administradores y clientes registrados en el sistema</p>
+          </div>
 
-      <div className="p-8">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-800 dark:text-white">
-              👥 Gestión de Usuarios
-            </h1>
-            <p className="text-gray-600 dark:text-gray-300 mt-2">
-              Administra los usuarios registrados en la plataforma
-            </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="stat-card">
+              <p className="stat-label">Total Usuarios</p>
+              <p className="stat-value text-stone-50">{users.length}</p>
+            </div>
+            <div className="stat-card">
+              <p className="stat-label">Administradores</p>
+              <p className="stat-value text-amber-400">{admins}</p>
+            </div>
+            <div className="stat-card">
+              <p className="stat-label">Clientes con citas</p>
+              <p className="stat-value text-emerald-400">{activeClients}</p>
+            </div>
           </div>
-          <Link
-            href="/admin"
-            className="text-blue-600 hover:text-blue-700 dark:text-blue-400 hover:underline"
-          >
-            ← Volver al Dashboard
-          </Link>
-        </div>
 
-        {/* Estadísticas rápidas */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
-            <h3 className="text-sm text-gray-500 dark:text-gray-400">
-              Total Usuarios
-            </h3>
-            <p className="text-2xl font-bold text-gray-800 dark:text-white">
-              {users.length}
-            </p>
-          </div>
-          <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg shadow">
-            <h3 className="text-sm text-purple-700 dark:text-purple-400">
-              Administradores
-            </h3>
-            <p className="text-2xl font-bold text-purple-800 dark:text-purple-300">
-              {users.filter((u) => u.role === "admin").length}
-            </p>
-          </div>
-          <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg shadow">
-            <h3 className="text-sm text-blue-700 dark:text-blue-400">
-              Clientes Activos
-            </h3>
-            <p className="text-2xl font-bold text-blue-800 dark:text-blue-300">
-              {users.filter((u) => u.total_appointments > 0).length}
-            </p>
-          </div>
-        </div>
-
-        {/* Tabla de usuarios */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 dark:bg-gray-700">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                    Usuario
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                    Rol
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                    Registro
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                    Citas
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                    Total Gastado
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                    Acciones
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {users.map((u) => (
-                  <tr
-                    key={u.id}
-                    className="hover:bg-gray-50 dark:hover:bg-gray-700/50"
-                  >
-                    <td className="px-6 py-4">
-                      <div className="flex items-center">
-                        <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900 dark:text-white">
-                            {u.name}
-                          </div>
-                          <div className="text-sm text-gray-500 dark:text-gray-400">
-                            {u.email}
-                          </div>
-                          {u.phone && (
-                            <div className="text-sm text-gray-500 dark:text-gray-400">
-                              📱 {u.phone}
-                            </div>
+          <div className="card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-stone-800/60">
+                  <tr>
+                    <th className="table-header">Usuario</th>
+                    <th className="table-header">Rol</th>
+                    <th className="table-header">Registro</th>
+                    <th className="table-header">Citas</th>
+                    <th className="table-header">Total Gastado</th>
+                    <th className="table-header">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-800">
+                  {users.map((u) => (
+                    <tr key={u.id} className="hover:bg-stone-800/40 transition-colors">
+                      <td className="table-cell">
+                        <div className="text-sm font-medium text-stone-100">{u.name}</div>
+                        <div className="text-xs text-stone-500">{u.email}</div>
+                        {u.phone && <div className="text-xs text-stone-500">📱 {u.phone}</div>}
+                      </td>
+                      <td className="table-cell">
+                        <span className={`badge ${u.role === "admin" ? "bg-amber-500/15 text-amber-400 border border-amber-500/30" : "bg-sky-500/15 text-sky-400 border border-sky-500/30"}`}>
+                          {u.role === "admin" ? "👑 Admin" : "👤 Cliente"}
+                        </span>
+                      </td>
+                      <td className="table-cell text-sm text-stone-400">
+                        {new Date(u.created_at).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })}
+                      </td>
+                      <td className="table-cell text-sm text-stone-200">{u.total_appointments || 0}</td>
+                      <td className="table-cell text-sm text-emerald-400 font-medium">{formatCurrency(u.total_spent)}</td>
+                      <td className="table-cell">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => { setEditingUser({ ...u }); setShowModal(true); }}
+                            className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500 hover:text-stone-950 transition-colors"
+                            title="Editar"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            onClick={() => { setSelectedUser(u); setShowPasswordModal(true); }}
+                            className="p-1.5 rounded-lg bg-sky-500/10 border border-sky-500/30 text-sky-400 hover:bg-sky-500 hover:text-white transition-colors"
+                            title="Resetear contraseña"
+                          >
+                            🔑
+                          </button>
+                          {u.role !== "admin" && (
+                            <button
+                              onClick={() => setDeleteUser(u)}
+                              className="p-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500 hover:text-white transition-colors"
+                              title="Eliminar"
+                            >
+                              🗑️
+                            </button>
                           )}
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={`px-2 py-1 text-xs rounded-full ${
-                          u.role === "admin"
-                            ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
-                            : "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
-                        }`}
-                      >
-                        {u.role === "admin" ? "👑 Admin" : "👤 Cliente"}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
-                      {formatDate(u.created_at)}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
-                      {u.total_appointments || 0}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-green-600 dark:text-green-400 font-medium">
-                      ${u.total_spent?.toLocaleString() || 0}
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => handleEditUser(u)}
-                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400"
-                          title="Editar usuario"
-                        >
-                          ✏️
-                        </button>
-                        <button
-                          onClick={() => {
-                            setSelectedUser(u);
-                            setShowPasswordModal(true);
-                          }}
-                          className="text-yellow-600 hover:text-yellow-800 dark:text-yellow-400"
-                          title="Resetear contraseña"
-                        >
-                          🔑
-                        </button>
-                        {u.role !== "admin" && (
-                          <button
-                            onClick={() => setDeleteUser(u)}
-                            className="text-red-600 hover:text-red-800 dark:text-red-400"
-                            title="Eliminar usuario"
-                          >
-                            🗑️
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
-      </div>
+      </main>
 
-      {/* Modal de Edición */}
+      {/* Modal editar */}
       {showModal && editingUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-white">
-              Editar Usuario
-            </h2>
-
-            <div className="space-y-4">
+        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="p-5 border-b border-stone-800">
+              <h3 className="text-lg font-bold text-stone-50">Editar Usuario</h3>
+            </div>
+            <div className="p-5 space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-1">Nombre</label>
+                <label className="label">Nombre</label>
                 <input
                   type="text"
                   value={editingUser.name}
-                  onChange={(e) =>
-                    setEditingUser({ ...editingUser, name: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border rounded-md dark:bg-gray-700 dark:border-gray-600"
+                  onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
+                  className="input"
                 />
               </div>
-
               <div>
-                <label className="block text-sm font-medium mb-1">Email</label>
+                <label className="label">Email</label>
                 <input
                   type="email"
                   value={editingUser.email}
-                  onChange={(e) =>
-                    setEditingUser({ ...editingUser, email: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border rounded-md dark:bg-gray-700 dark:border-gray-600"
+                  onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
+                  className="input"
                 />
               </div>
-
               <div>
-                <label className="block text-sm font-medium mb-1">
-                  Teléfono (opcional)
-                </label>
+                <label className="label">Teléfono</label>
                 <input
                   type="tel"
                   inputMode="numeric"
                   value={editingUser.phone || ""}
-                  onChange={(e) =>
-                    setEditingUser({
-                      ...editingUser,
-                      phone: e.target.value.replace(/\D/g, "").slice(0, 10)
-                    })
-                  }
+                  onChange={(e) => setEditingUser({ ...editingUser, phone: e.target.value.replace(/\D/g, "").slice(0, 10) })}
+                  className="input"
                   placeholder="3001234567"
-                  className="w-full px-3 py-2 border rounded-md dark:bg-gray-700 dark:border-gray-600"
                 />
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Celular colombiano de 10 dígitos (empieza con 3)
-                </p>
               </div>
-
               <div>
-                <label className="block text-sm font-medium mb-1">Rol</label>
+                <label className="label">Rol</label>
                 <select
                   value={editingUser.role}
-                  onChange={(e) =>
-                    setEditingUser({ ...editingUser, role: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border rounded-md dark:bg-gray-700 dark:border-gray-600"
+                  onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value as "admin" | "cliente" })}
+                  className="input"
                 >
                   <option value="cliente">Cliente</option>
                   <option value="admin">Administrador</option>
                 </select>
               </div>
             </div>
-
-            <div className="flex justify-end space-x-3 mt-6">
-              <button
-                onClick={() => setShowModal(false)}
-                className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleUpdateUser}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-              >
-                Guardar Cambios
-              </button>
+            <div className="flex gap-3 p-5 border-t border-stone-800">
+              <button onClick={() => setShowModal(false)} className="btn btn-ghost flex-1">Cancelar</button>
+              <button onClick={handleUpdateUser} className="btn btn-primary flex-1">Guardar</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal de Reset Password */}
+      {/* Modal reset password */}
       {showPasswordModal && selectedUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-white">
-              🔐 Resetear Contraseña
-            </h2>
-
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              Usuario: <strong>{selectedUser.name}</strong> (
-              {selectedUser.email})
-            </p>
-
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                Nueva Contraseña
-              </label>
-              <input
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Mínimo 6 caracteres"
-                className="w-full px-3 py-2 border rounded-md dark:bg-gray-700 dark:border-gray-600"
-              />
+        <div className="modal-overlay" onClick={() => setShowPasswordModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="p-5 border-b border-stone-800">
+              <h3 className="text-lg font-bold text-stone-50">🔐 Resetear Contraseña</h3>
             </div>
-
-            <div className="flex justify-end space-x-3 mt-6">
-              <button
-                onClick={() => {
-                  setShowPasswordModal(false);
-                  setNewPassword("");
-                  setSelectedUser(null);
-                }}
-                className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleResetPassword}
-                className="px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700"
-              >
-                Actualizar Contraseña
-              </button>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-stone-400">
+                Usuario: <strong className="text-stone-100">{selectedUser.name}</strong> ({selectedUser.email})
+              </p>
+              <div>
+                <label className="label">Nueva contraseña</label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="input"
+                  placeholder="Mínimo 6 caracteres"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 p-5 border-t border-stone-800">
+              <button onClick={() => setShowPasswordModal(false)} className="btn btn-ghost flex-1">Cancelar</button>
+              <button onClick={handleResetPassword} className="btn btn-primary flex-1">Actualizar</button>
             </div>
           </div>
         </div>
       )}
 
+      {/* Modal eliminar */}
       {deleteUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-white">
-              🗑️ Eliminar Usuario
-            </h2>
-            <p className="text-gray-700 dark:text-gray-300 mb-2">
-              ¿Estás seguro de eliminar al usuario{" "}
-              <strong>{deleteUser.name}</strong>?
-            </p>
-            <p className="text-sm text-red-600 dark:text-red-400 mb-4">
-              ⚠️ Esta acción también eliminará todas sus citas y NO se puede
-              deshacer.
-            </p>
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setDeleteUser(null)}
-                className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={() => {
-                  handleDeleteUser(deleteUser.id, deleteUser.name);
-                  setDeleteUser(null);
-                }}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-              >
-                Sí, eliminar
-              </button>
+        <div className="modal-overlay" onClick={() => setDeleteUser(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="p-5 border-b border-stone-800">
+              <h3 className="text-lg font-bold text-red-400">Eliminar Usuario</h3>
+            </div>
+            <div className="p-5">
+              <p className="text-stone-300">
+                ¿Eliminar al usuario <strong className="text-stone-100">{deleteUser.name}</strong>?
+              </p>
+              <p className="text-xs text-red-400/80 mt-2">También se eliminarán sus citas. No se puede deshacer.</p>
+            </div>
+            <div className="flex gap-3 p-5 border-t border-stone-800">
+              <button onClick={() => setDeleteUser(null)} className="btn btn-ghost flex-1">Cancelar</button>
+              <button onClick={() => handleDeleteUser(deleteUser.id, deleteUser.name)} className="btn btn-danger flex-1">Eliminar</button>
             </div>
           </div>
         </div>

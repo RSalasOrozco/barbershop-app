@@ -6,17 +6,12 @@ export default async function proxy(request: NextRequest) {
   const token = request.cookies.get("token")?.value;
   const { pathname } = request.nextUrl;
 
-  const publicPaths = ["/login", "/register", "/"];
+  const publicPaths = ["/login", "/", "/license"];
   if (publicPaths.includes(pathname)) {
     if (token) {
       const payload = await verifyToken(token);
       if (payload) {
-        return NextResponse.redirect(
-          new URL(
-            payload.role === "admin" ? "/admin" : "/cliente",
-            request.url
-          )
-        );
+        return NextResponse.redirect(new URL("/admin", request.url));
       }
     }
     return NextResponse.next();
@@ -31,8 +26,8 @@ export default async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (pathname.startsWith("/admin") && payload.role !== "admin") {
-    return NextResponse.redirect(new URL("/cliente", request.url));
+  if (payload.role !== "admin") {
+    return NextResponse.redirect(new URL("/login", request.url));
   }
 
   return NextResponse.next();
