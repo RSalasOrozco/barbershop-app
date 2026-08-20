@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import { toast } from "sonner";
 import type { SessionUser, User } from "@/lib/types";
@@ -11,6 +11,17 @@ export default function AdminUsersPage() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [stats, setStats] = useState<{ total: number; admins: number; withAppointments: number }>({
+    total: 0,
+    admins: 0,
+    withAppointments: 0
+  });
+
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -18,27 +29,43 @@ export default function AdminUsersPage() {
   const [deleteUser, setDeleteUser] = useState<User | null>(null);
   const [newPassword, setNewPassword] = useState("");
 
-  const mounted = useRef(false);
-
   const fetchAll = useCallback(async () => {
     try {
-      const [u, us] = await Promise.all([fetch("/api/auth/me"), fetch("/api/admin/users")]);
+      const params = new URLSearchParams();
+      if (search.trim()) params.set("search", search.trim());
+      params.set("page", String(page));
+      params.set("limit", String(pageSize));
+
+      const [u, us] = await Promise.all([
+        fetch("/api/auth/me"),
+        fetch(`/api/admin/users?${params.toString()}`)
+      ]);
       const ud = await u.json();
       const usd = await us.json();
       setUser(ud.user || null);
       setUsers(usd.users || []);
+      setTotal(usd.pagination?.total ?? 0);
+      setTotalPages(usd.pagination?.totalPages ?? 1);
+      setStats(usd.stats || { total: 0, admins: 0, withAppointments: 0 });
     } catch (error) {
       console.error(error);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [search, page, pageSize]);
 
+  // Cargar con debounce al buscar
   useEffect(() => {
-    if (mounted.current) return;
-    mounted.current = true;
-    fetchAll();
+    const t = setTimeout(() => {
+      fetchAll();
+    }, 250);
+    return () => clearTimeout(t);
   }, [fetchAll]);
+
+  // Reiniciar página al cambiar la búsqueda o el tamaño de página
+  useEffect(() => {
+    setPage(1);
+  }, [search, pageSize]);
 
   const handleUpdateUser = async () => {
     if (!editingUser) return;
@@ -101,8 +128,8 @@ export default function AdminUsersPage() {
     }
   };
 
-  const admins = users.filter((u) => u.role === "admin").length;
-  const activeClients = users.filter((u) => u.total_appointments > 0).length;
+  const admins = stats.admins;
+  const activeClients = stats.withAppointments;
 
   if (loading) {
     return (
@@ -126,7 +153,7 @@ export default function AdminUsersPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             <div className="stat-card">
               <p className="stat-label">Total Usuarios</p>
-              <p className="stat-value text-stone-50">{users.length}</p>
+              <p className="stat-value text-stone-50">{stats.total}</p>
             </div>
             <div className="stat-card">
               <p className="stat-label">Administradores</p>
@@ -139,6 +166,22 @@ export default function AdminUsersPage() {
           </div>
 
           <div className="card overflow-hidden">
+            <div className="p-4 border-b border-stone-800">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex-1 min-w-40">
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="🔍 Buscar por nombre, correo o teléfono..."
+                    className="input"
+                  />
+                </div>
+                <button onClick={() => { setSearch(""); setPage(1); }} className="btn btn-ghost">
+                  Limpiar
+                </button>
+              </div>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-stone-800/60">
@@ -152,7 +195,8 @@ export default function AdminUsersPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-800">
-                  {users.map((u) => (
+                  {users.length > 0 ? (
+                    users.map((u) => (
                     <tr key={u.id} className="hover:bg-stone-800/40 transition-colors">
                       <td className="table-cell">
                         <div className="text-sm font-medium text-stone-100">{u.name}</div>
@@ -197,9 +241,56 @@ export default function AdminUsersPage() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  ))
+                  ) : (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-10 text-center text-stone-500">
+                        No hay usuarios que coincidan con la búsqueda.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
+            </div>
+
+            {/* Paginación */}
+            <div className="flex flex-wrap items-center justify-between gap-3 p-4 border-t border-stone-800">
+              <div className="flex items-center gap-2">
+                <p className="text-sm text-stone-500">
+                  {total > 0 ? `Mostrando ${users.length} de ${total} usuarios` : "Sin resultados"}
+                </p>
+                <select
+                  value={pageSize}
+                  onChange={(e) => setPageSize(Number(e.target.value))}
+                  className="input !w-auto !py-1.5 text-sm"
+                  title="Usuarios por página"
+                >
+                  {[15, 25, 50, 100].map((n) => (
+                    <option key={n} value={n}>{n} / pág.</option>
+                  ))}
+                </select>
+              </div>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page <= 1}
+                    className="btn btn-ghost !px-3 !py-1.5 text-sm"
+                  >
+                    ← Anterior
+                  </button>
+                  <span className="text-sm text-stone-400">
+                    Página {page} de {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page >= totalPages}
+                    className="btn btn-ghost !px-3 !py-1.5 text-sm"
+                  >
+                    Siguiente →
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

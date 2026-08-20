@@ -14,28 +14,67 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Acceso denegado" }, { status: 403 });
     }
 
+    const { searchParams } = new URL(request.url);
+    const search = (searchParams.get("search") || "").trim();
+    const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "25", 10)));
+
+    let whereSql = "";
+    const whereParams: string[] = [];
+    if (search) {
+      const q = `%${search}%`;
+      whereSql = "WHERE u.name LIKE ? OR u.email LIKE ? OR u.phone LIKE ?";
+      whereParams.push(q, q, q);
+    }
+
+    const totalRow = db
+      .prepare(`SELECT COUNT(*) as count FROM users u ${whereSql}`)
+      .get(...whereParams) as { count: number };
+    const total = totalRow.count;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const offset = (page - 1) * limit;
+
     const users = db
       .prepare(
         `
-      SELECT 
-        u.id,
-        u.name,
-        u.email,
-        u.phone,
-        u.role,
-        u.created_at,
-        COUNT(a.id) as total_appointments,
-        SUM(CASE WHEN a.status = 'completada' THEN s.price ELSE 0 END) as total_spent
-      FROM users u
-      LEFT JOIN appointments a ON u.id = a.user_id
-      LEFT JOIN services s ON a.service_id = s.id
-      GROUP BY u.id
-      ORDER BY u.created_at DESC
-    `
+        SELECT
+          u.id,
+          u.name,
+          u.email,
+          u.phone,
+          u.role,
+          u.created_at,
+          COUNT(a.id) as total_appointments,
+          COALESCE(SUM(CASE WHEN a.status = 'completada' THEN COALESCE(a.paid_amount, s.price) ELSE 0 END), 0) as total_spent
+        FROM users u
+        LEFT JOIN appointments a ON u.id = a.user_id
+        LEFT JOIN services s ON a.service_id = s.id
+        ${whereSql}
+        GROUP BY u.id
+        ORDER BY u.created_at DESC
+        LIMIT ? OFFSET ?
+      `
       )
-      .all();
+      .all(...whereParams, limit, offset);
 
-    return NextResponse.json({ users });
+    const stats = db
+      .prepare(
+        "SELECT COUNT(*) as total, SUM(CASE WHEN role = 'admin' THEN 1 ELSE 0 END) as admins FROM users"
+      )
+      .get() as { total: number; admins: number };
+    const withAppointments = db
+      .prepare("SELECT COUNT(DISTINCT user_id) as c FROM appointments WHERE user_id IS NOT NULL")
+      .get() as { c: number };
+
+    return NextResponse.json({
+      users,
+      pagination: { page, limit, total, totalPages },
+      stats: {
+        total: stats.total,
+        admins: stats.admins || 0,
+        withAppointments: withAppointments.c
+      }
+    });
   } catch (error) {
     console.error("Error en GET /api/admin/users:", error);
     return NextResponse.json(
